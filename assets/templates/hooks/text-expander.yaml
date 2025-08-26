@@ -1,0 +1,44 @@
+name: text-expander
+description: Expand short text markers into longer configured text snippets
+event: UserPromptSubmit
+matcher: "*"
+command: |
+  #!/bin/bash
+  # Text Expander Hook for Claude Code
+  # Expands short markers like -d, -v, etc. into configured text snippets
+  
+  # Configuration file path
+  CONFIG_FILE="$HOME/.claude-helper/text-expander-config.json"
+  
+  # Read the entire prompt from stdin
+  PROMPT=$(cat)
+  
+  # Check if config file exists
+  if [ ! -f "$CONFIG_FILE" ]; then
+    # No config file, just pass through
+    echo "$PROMPT"
+    exit 0
+  fi
+  
+  # Check if jq is available for JSON parsing
+  if ! command -v jq &> /dev/null; then
+    echo "Warning: jq not found, text expander disabled" >&2
+    echo "$PROMPT"
+    exit 0
+  fi
+  
+  # Process the prompt for text expansion
+  EXPANDED_PROMPT="$PROMPT"
+  
+  # Read all mappings from config file and apply them
+  while IFS=$'\t' read -r marker replacement; do
+    if [ -n "$marker" ] && [ -n "$replacement" ]; then
+      # Replace whole words only (surrounded by whitespace or at start/end)
+      EXPANDED_PROMPT=$(echo "$EXPANDED_PROMPT" | sed "s/\(^\|[[:space:]]\)$marker\([[:space:]]\|$\)/\1$replacement\2/g")
+    fi
+  done < <(jq -r '.mappings | to_entries[] | "\(.key)\t\(.value)"' "$CONFIG_FILE" 2>/dev/null)
+  
+  # Output the expanded prompt
+  echo "$EXPANDED_PROMPT"
+timeout: 10
+enabled: true

@@ -1,0 +1,17 @@
+name: format-code
+description: Auto-format code files after editing
+event: PostToolUse
+matcher: Edit|Write
+command: |
+  #!/bin/bash
+  # Auto-format code files
+  if [[ "$1" == *.go ]]; then
+    gofmt -w "$1"
+  elif [[ "$1" == *.js || "$1" == *.ts || "$1" == *.jsx || "$1" == *.tsx ]]; then
+    npx prettier --write "$1"
+  elif [[ "$1" == *.py ]]; then
+    black "$1"
+  fi
+  echo "Formatted: $1"
+timeout: 30
+enabled: true
