@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	
 	"github.com/zxj777/claude-helper/pkg/types"
 )
@@ -49,12 +50,13 @@ func GetSettingsPath() (string, error) {
 		return "", fmt.Errorf("failed to get current directory: %w", err)
 	}
 	
-	localSettingsPath := filepath.Join(cwd, ".claude", "settings.local.json")
-	if _, err := os.Stat(localSettingsPath); err == nil {
+	// Use project-local settings.json (this gets committed to version control)
+	localSettingsPath := filepath.Join(cwd, ".claude", "settings.json")
+	if _, err := os.Stat(filepath.Dir(localSettingsPath)); err == nil {
 		return localSettingsPath, nil
 	}
 	
-	// Fall back to global Claude settings
+	// Fall back to global Claude settings if no .claude directory
 	claudePath, err := GetClaudeConfigPath()
 	if err != nil {
 		return "", err
@@ -120,9 +122,35 @@ func IsHookInstalled(hookName string) (bool, error) {
 		return false, nil
 	}
 
-	// TODO: Implement more sophisticated hook detection
-	// For now, just check if hooks section exists and is not empty
-	return len(settings.Hooks) > 0, nil
+	// Search through all hook events to find the specific hook
+	for _, eventHooks := range settings.Hooks {
+		// eventHooks could be a slice or other structure, need to handle different types
+		switch v := eventHooks.(type) {
+		case []interface{}:
+			for _, hookGroup := range v {
+				if hookGroupMap, ok := hookGroup.(map[string]interface{}); ok {
+					if hooks, exists := hookGroupMap["hooks"]; exists {
+						if hooksSlice, ok := hooks.([]interface{}); ok {
+							for _, hook := range hooksSlice {
+								if hookMap, ok := hook.(map[string]interface{}); ok {
+									if command, exists := hookMap["command"]; exists {
+										if commandStr, ok := command.(string); ok {
+											// Check if the command contains the hook name
+											if strings.Contains(commandStr, hookName) {
+												return true, nil
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return false, nil
 }
 
 // InstallHookToSettings adds a hook to Claude's settings.json file
