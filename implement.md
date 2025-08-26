@@ -184,6 +184,167 @@ Auto-detect Claude Code installation path:
 - Version management and update mechanism
 - Community-contributed template support
 
+## Hook-Agent Integration Architecture
+
+### Design Philosophy
+The claude-helper tool follows a **"Self-contained Hooks + Optional Management Tool"** architecture that ensures maximum usability and minimal deployment friction.
+
+### Core Principles
+
+#### 1. **Zero External Dependencies for End Users**
+- Hooks operate independently using only standard Python/Shell scripts
+- No requirement to install claude-helper for hook execution
+- Projects remain self-contained and portable
+- Users can use hooks immediately after cloning the project
+
+#### 2. **Optional Development Tool**
+- claude-helper serves as a **development and management tool**
+- Helps developers create, test, and organize Hook/Agent templates
+- Generates self-contained configurations for distribution
+- Not required during runtime or by end users
+
+#### 3. **Flexible Integration Patterns**
+
+**Pattern A: Hook Automatically Installs Agent**
+```python
+# smart-review.py - Self-contained hook script
+def ensure_agent_available():
+    agents_dir = Path(".claude/agents") 
+    agent_file = agents_dir / "code-reviewer.md"
+    
+    if not agent_file.exists():
+        # Copy from templates without external dependencies
+        template_path = Path("assets/templates/agents/code-reviewer.md")
+        if template_path.exists():
+            shutil.copy2(template_path, agent_file)
+            print("✅ Code reviewer agent ready")
+```
+
+**Pattern B: Conditional Tool Usage**
+```bash
+# flexible-review.sh - Adaptive hook script
+if command -v claude-helper &> /dev/null; then
+    # Use claude-helper if available (development environment)
+    claude-helper install code-reviewer --type agent
+else
+    # Fall back to manual setup (production environment)
+    cp assets/templates/agents/code-reviewer.md .claude/agents/
+fi
+```
+
+#### 4. **Configuration Strategy**
+
+**Development Phase:**
+- Use `claude-helper` to create and manage templates
+- Test hooks and agents in local environment
+- Generate optimized configurations
+
+**Deployment Phase:**
+- Hooks become standalone Python/Shell scripts
+- Agent templates are static markdown files
+- Configuration files (settings.json) are committed to version control
+
+**Usage Phase:**
+- End users interact only with Claude Code
+- Hooks trigger automatically based on configured events
+- Agents are loaded seamlessly into conversations
+
+### Integration Workflow Examples
+
+#### Smart Code Review Workflow
+```yaml
+# Hook Configuration (auto-review.yaml)
+name: auto-review
+events: [UserPromptSubmit]
+matcher: "*review*"
+hooks:
+  - type: command
+    command: "python3 .claude/hooks/smart-review.py"
+```
+
+```python
+# Hook Implementation (smart-review.py)
+def main():
+    # 1. Detect review request
+    ensure_code_reviewer_agent()
+    
+    # 2. Prepare context files
+    create_review_context()
+    
+    # 3. Agent automatically participates in conversation
+    print("🎯 Code reviewer ready!")
+```
+
+#### Automated Documentation Generation
+```yaml
+# Hook triggers when code files are modified
+name: auto-docs
+events: [PostToolUse]
+matcher: "Edit|Write"
+hooks:
+  - type: command
+    command: "bash .claude/hooks/doc-generator.sh"
+```
+
+### Benefits of This Architecture
+
+#### For End Users:
+- **Zero Setup**: Clone project and hooks work immediately
+- **No Dependencies**: Only need Claude Code itself
+- **Transparent**: Hooks work behind the scenes
+- **Reliable**: No external tool version conflicts
+
+#### For Developers:
+- **Powerful Tooling**: Rich CLI for management and testing
+- **Template System**: Reusable components across projects
+- **Easy Distribution**: Generate self-contained packages
+- **Development Speed**: Rapid prototyping and testing
+
+#### For Projects:
+- **Portable**: Works across different environments
+- **Maintainable**: Clear separation of concerns
+- **Scalable**: Easy to add new hooks and agents
+- **Version Control Friendly**: All configurations tracked in git
+
+### Implementation Best Practices
+
+#### Hook Scripts Should:
+```python
+# ✅ Good: Self-contained with error handling
+def ensure_agent_ready():
+    try:
+        agents_dir = Path(".claude/agents")
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        # Handle agent installation
+    except Exception as e:
+        print(f"⚠️ Could not prepare agent: {e}")
+        return False
+    return True
+```
+
+#### Avoid External Dependencies:
+```python
+# ❌ Bad: Requires claude-helper installation
+subprocess.run(["claude-helper", "install", "code-reviewer"])
+
+# ✅ Good: Direct file operations
+shutil.copy2("templates/code-reviewer.md", ".claude/agents/")
+```
+
+#### Provide Graceful Fallbacks:
+```python
+# ✅ Good: Multiple fallback strategies
+def get_agent_template():
+    # Try project templates first
+    if template_exists("assets/templates/agents/code-reviewer.md"):
+        return load_template("assets/templates/agents/code-reviewer.md")
+    
+    # Try embedded fallback
+    return get_embedded_template("code-reviewer")
+```
+
+This architecture ensures that claude-helper enhances the development experience while keeping the final product simple and dependency-free.
+
 ## Technology Stack
 - **CLI Framework**: cobra - Powerful command-line application framework
 - **Configuration**: viper - Flexible configuration solution
