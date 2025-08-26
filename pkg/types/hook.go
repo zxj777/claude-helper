@@ -22,6 +22,7 @@ type Hook struct {
 	Description string    `json:"description" yaml:"description"`
 	Event       HookEvent `json:"event" yaml:"event"`
 	Matcher     string    `json:"matcher,omitempty" yaml:"matcher,omitempty"`
+	Setup       string    `json:"setup,omitempty" yaml:"setup,omitempty"`
 	Command     string    `json:"command" yaml:"command"`
 	Timeout     int       `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 	Enabled     bool      `json:"enabled" yaml:"enabled"`

@@ -2,43 +2,106 @@ name: text-expander
 description: Expand short text markers into longer configured text snippets
 event: UserPromptSubmit
 matcher: "*"
-command: |
+setup: |
   #!/bin/bash
-  # Text Expander Hook for Claude Code
-  # Expands short markers like -d, -v, etc. into configured text snippets
+  # Setup text expander hook
   
-  # Configuration file path
-  CONFIG_FILE="$HOME/.claude-helper/text-expander-config.json"
+  # Create the Python hook script in .claude/hooks/
+  mkdir -p .claude/hooks
   
-  # Read the entire prompt from stdin
-  PROMPT=$(cat)
+  cat > .claude/hooks/text-expander.py << 'EOF'
+  #!/usr/bin/env python3
+  import json
+  import sys
+  import os
   
-  # Check if config file exists
-  if [ ! -f "$CONFIG_FILE" ]; then
-    # No config file, just pass through
-    echo "$PROMPT"
-    exit 0
+  try:
+      # Read JSON input from stdin
+      input_data = json.load(sys.stdin)
+      
+      # Extract prompt
+      prompt = input_data.get('prompt', '')
+      if not prompt:
+          sys.exit(0)
+      
+      # Load text expansion config from project .claude/config directory
+      config_file = '.claude/config/text-expander.json'
+      if not os.path.exists(config_file):
+          sys.exit(0)
+      
+      with open(config_file, 'r') as f:
+          config = json.load(f)
+      
+      # Apply text expansions
+      expanded_prompt = prompt
+      for marker, replacement in config.get('mappings', {}).items():
+          expanded_prompt = expanded_prompt.replace(marker, replacement)
+      
+      # If prompt changed, output expanded prompt as context and allow through
+      if prompt != expanded_prompt:
+          # Output expanded prompt as additional context for Claude
+          print(f"用户的意思是: {expanded_prompt}")
+          # Exit with code 0 to allow the original prompt through with added context
+          sys.exit(0)
+      
+      # No change needed, allow original prompt through
+      sys.exit(0)
+          
+  except Exception as e:
+      # On any error, allow original prompt through
+      sys.exit(0)
+  EOF
+  
+  # Make the Python script executable
+  chmod +x .claude/hooks/text-expander.py
+  
+  # Create config directory and config file
+  mkdir -p .claude/config
+  
+  # Check if user provided custom mappings via interactive configuration
+  if [ -f ".claude-temp-mappings.txt" ]; then
+    # Build JSON from user's interactive input
+    echo "{" > .claude/config/text-expander.json
+    echo '  "mappings": {' >> .claude/config/text-expander.json
+    
+    # Read mappings from temp file and convert to JSON
+    first=true
+    while IFS=$'\t' read -r marker replacement; do
+      if [ "$first" = true ]; then
+        first=false
+      else
+        echo "," >> .claude/config/text-expander.json
+      fi
+      # Escape quotes in replacement text
+      escaped_replacement=$(echo "$replacement" | sed 's/"/\\"/g')
+      printf '    "%s": "%s"' "$marker" "$escaped_replacement" >> .claude/config/text-expander.json
+    done < .claude-temp-mappings.txt
+    
+    echo "" >> .claude/config/text-expander.json
+    echo "  }" >> .claude/config/text-expander.json
+    echo "}" >> .claude/config/text-expander.json
+    
+    # Clean up temp file
+    rm -f .claude-temp-mappings.txt
+  else
+    # Use default mappings if no interactive configuration
+    cat > .claude/config/text-expander.json << 'EOF'
+  {
+    "mappings": {
+      "-d": "该睡觉了",
+      "-z": "该睡觉了",
+      "-v": "查看详细信息",
+      "-h": "显示帮助信息",
+      "-l": "列出所有项目",
+      "-s": "显示状态信息"
+    }
+  }
+  EOF
   fi
   
-  # Check if jq is available for JSON parsing
-  if ! command -v jq &> /dev/null; then
-    echo "Warning: jq not found, text expander disabled" >&2
-    echo "$PROMPT"
-    exit 0
-  fi
-  
-  # Process the prompt for text expansion
-  EXPANDED_PROMPT="$PROMPT"
-  
-  # Read all mappings from config file and apply them
-  while IFS=$'\t' read -r marker replacement; do
-    if [ -n "$marker" ] && [ -n "$replacement" ]; then
-      # Replace whole words only (surrounded by whitespace or at start/end)
-      EXPANDED_PROMPT=$(echo "$EXPANDED_PROMPT" | sed "s/\(^\|[[:space:]]\)$marker\([[:space:]]\|$\)/\1$replacement\2/g")
-    fi
-  done < <(jq -r '.mappings | to_entries[] | "\(.key)\t\(.value)"' "$CONFIG_FILE" 2>/dev/null)
-  
-  # Output the expanded prompt
-  echo "$EXPANDED_PROMPT"
+  echo "Text expander hook installed successfully!"
+  echo "Configuration file created at: .claude/config/text-expander.json"
+  echo "Hook script created at: .claude/hooks/text-expander.py"
+command: python3 .claude/hooks/text-expander.py
 timeout: 10
 enabled: true

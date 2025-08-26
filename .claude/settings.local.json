@@ -1,13 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mkdir:*)",
-      "Bash(go run:*)",
-      "Bash(rm:*)",
-      "Bash(find:*)"
-    ],
-    "deny": [],
-    "ask": []
+      "Bash(chmod:*)",
+      "Bash(./build.sh:*)"
+    ]
   },
-  "outputStyle": "Learning"
+  "hooks": {
+    "UserPromptSubmit": []
+  }
 }

@@ -41,8 +41,20 @@ func GetAgentsPath() (string, error) {
 	return filepath.Join(claudePath, "agents"), nil
 }
 
-// GetSettingsPath returns the path to Claude's settings.json file
+// GetSettingsPath returns the path to Claude's settings file
 func GetSettingsPath() (string, error) {
+	// First, check if we're in a project with local Claude settings
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+	
+	localSettingsPath := filepath.Join(cwd, ".claude", "settings.local.json")
+	if _, err := os.Stat(localSettingsPath); err == nil {
+		return localSettingsPath, nil
+	}
+	
+	// Fall back to global Claude settings
 	claudePath, err := GetClaudeConfigPath()
 	if err != nil {
 		return "", err
@@ -50,14 +62,15 @@ func GetSettingsPath() (string, error) {
 	return filepath.Join(claudePath, "settings.json"), nil
 }
 
-// IsAgentInstalled checks if an agent is installed in Claude
+// IsAgentInstalled checks if an agent is installed in the project-local directory
 func IsAgentInstalled(agentName string) (bool, error) {
-	agentsPath, err := GetAgentsPath()
+	// Use project-local agents directory
+	wd, err := os.Getwd()
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to get working directory: %w", err)
 	}
-
-	agentFile := filepath.Join(agentsPath, agentName+".md")
+	agentFile := filepath.Join(wd, ".claude", "agents", agentName+".md")
+	
 	_, err = os.Stat(agentFile)
 	if os.IsNotExist(err) {
 		return false, nil
@@ -136,22 +149,34 @@ func InstallHookToSettings(hook *types.Hook) error {
 
 	// Convert hook to Claude format and merge
 	claudeHooks := types.MergeHooksIntoClaudeConfig([]types.Hook{*hook})
-	hookConfig := claudeHooks["hooks"].(map[string]interface{})
+	hookConfig := claudeHooks["hooks"].(map[string][]map[string]interface{})
 	
 	// Merge the hook configuration
 	for eventName, eventHooks := range hookConfig {
 		if existingEventHooks, exists := settings.Hooks[eventName]; exists {
 			// Merge with existing hooks for this event
 			if existingArray, ok := existingEventHooks.([]interface{}); ok {
-				newHooks := eventHooks.([]interface{})
+				// Convert []map[string]interface{} to []interface{}
+				newHooks := make([]interface{}, len(eventHooks))
+				for i, hook := range eventHooks {
+					newHooks[i] = hook
+				}
 				settings.Hooks[eventName] = append(existingArray, newHooks...)
 			} else {
-				// Replace if existing format is unexpected
-				settings.Hooks[eventName] = eventHooks
+				// Replace if existing format is unexpected - convert to []interface{}
+				converted := make([]interface{}, len(eventHooks))
+				for i, hook := range eventHooks {
+					converted[i] = hook
+				}
+				settings.Hooks[eventName] = converted
 			}
 		} else {
-			// Add new event hooks
-			settings.Hooks[eventName] = eventHooks
+			// Add new event hooks - convert to []interface{}
+			converted := make([]interface{}, len(eventHooks))
+			for i, hook := range eventHooks {
+				converted[i] = hook
+			}
+			settings.Hooks[eventName] = converted
 		}
 	}
 
@@ -214,7 +239,12 @@ func RemoveHookFromSettings(hookName string) error {
 					}
 				}
 			}
-			settings.Hooks[eventName] = filteredHooks
+			// If no hooks remain for this event, set it to an empty array instead of nil/null
+			if len(filteredHooks) == 0 {
+				settings.Hooks[eventName] = []interface{}{}
+			} else {
+				settings.Hooks[eventName] = filteredHooks
+			}
 		}
 	}
 

@@ -2,9 +2,9 @@ package cli
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -101,11 +101,12 @@ func isComponentInstalled(name, componentType string) (bool, error) {
 }
 
 func installAgent(name, templatePath string) error {
-	// Get Claude agents directory
-	agentsDir, err := config.GetAgentsPath()
+	// Use project-local agents directory (.claude/agents/)
+	wd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get working directory: %w", err)
 	}
+	agentsDir := filepath.Join(wd, ".claude", "agents")
 
 	// Create agents directory if it doesn't exist
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
@@ -118,19 +119,20 @@ func installAgent(name, templatePath string) error {
 		return fmt.Errorf("failed to read template: %w", err)
 	}
 
-	// Write to Claude agents directory
+	// Write to project-local agents directory
 	targetPath := filepath.Join(agentsDir, name+".md")
 	if err := os.WriteFile(targetPath, content, 0644); err != nil {
 		return fmt.Errorf("failed to write agent file: %w", err)
 	}
 
+	fmt.Printf("Agent installed at: %s\n", targetPath)
 	return nil
 }
 
 func installHook(name, templatePath string) error {
-	// Special handling for text-expander hook
+	// Special handling for text-expander hook - configure mappings before setup
 	if name == "text-expander" {
-		if err := configureTextExpander(); err != nil {
+		if err := configureTextExpanderMappings(); err != nil {
 			return fmt.Errorf("failed to configure text expander: %w", err)
 		}
 	}
@@ -147,134 +149,17 @@ func installHook(name, templatePath string) error {
 		return fmt.Errorf("failed to parse hook template: %w", err)
 	}
 
+	// Execute setup script if present
+	if hook.Setup != "" {
+		if err := executeSetupScript(hook.Setup); err != nil {
+			return fmt.Errorf("failed to execute setup script: %w", err)
+		}
+	}
+
 	// Install hook to Claude settings
 	return installHookToSettings(hook)
 }
 
-func configureTextExpander() error {
-	fmt.Println("🔧 Configuring Text Expander mappings...")
-	fmt.Println("You can create shortcuts that expand to longer text.")
-	fmt.Println("Example: -d -> 'Please provide detailed explanation'")
-	fmt.Println("Press Enter with empty marker to finish configuration.")
-	fmt.Println()
-
-	// Get config directory path
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-	
-	configDir := filepath.Join(homeDir, ".claude-helper")
-	configPath := filepath.Join(configDir, "text-expander-config.json")
-
-	// Create config directory
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	// Load existing config or create new
-	var textConfig TextExpanderConfig
-	if data, err := os.ReadFile(configPath); err == nil {
-		if err := json.Unmarshal(data, &textConfig); err != nil {
-			fmt.Printf("Warning: existing config file is corrupted, creating new one\n")
-		}
-	}
-	if textConfig.Mappings == nil {
-		textConfig.Mappings = make(map[string]string)
-	}
-
-	// Interactive input
-	reader := bufio.NewReader(os.Stdin)
-	
-	for {
-		fmt.Print("Enter marker (e.g., -d, -v, --explain): ")
-		marker, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read input: %w", err)
-		}
-		
-		marker = strings.TrimSpace(marker)
-		if marker == "" {
-			break // Empty input ends configuration
-		}
-
-		// Validate marker
-		if !isValidMarker(marker) {
-			fmt.Println("❌ Invalid marker. Use format like: -d, -v, --explain, debug")
-			continue
-		}
-
-		fmt.Printf("Enter replacement text for '%s': ", marker)
-		replacement, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read replacement: %w", err)
-		}
-		
-		replacement = strings.TrimSpace(replacement)
-		if replacement == "" {
-			fmt.Println("❌ Replacement text cannot be empty")
-			continue
-		}
-
-		// Check if marker already exists
-		if existing, exists := textConfig.Mappings[marker]; exists {
-			fmt.Printf("⚠️  Marker '%s' already exists with value: '%s'\n", marker, existing)
-			fmt.Print("Overwrite? (y/N): ")
-			confirm, _ := reader.ReadString('\n')
-			if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
-				continue
-			}
-		}
-
-		textConfig.Mappings[marker] = replacement
-		fmt.Printf("✅ Added mapping: '%s' → '%s'\n", marker, replacement)
-		fmt.Println()
-	}
-
-	if len(textConfig.Mappings) == 0 {
-		fmt.Println("No mappings configured. Text expander will be installed but inactive.")
-	} else {
-		fmt.Printf("📝 Total mappings configured: %d\n", len(textConfig.Mappings))
-	}
-
-	// Save configuration
-	return saveTextExpanderConfig(configPath, &textConfig)
-}
-
-func isValidMarker(marker string) bool {
-	if len(marker) == 0 {
-		return false
-	}
-	
-	// Allow markers starting with - or -- or just alphanumeric words
-	if strings.HasPrefix(marker, "-") {
-		return len(marker) > 1
-	}
-	
-	// Allow simple word markers
-	for _, char := range marker {
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || 
-			 (char >= '0' && char <= '9') || char == '_' || char == '-') {
-			return false
-		}
-	}
-	
-	return true
-}
-
-func saveTextExpanderConfig(configPath string, textConfig *TextExpanderConfig) error {
-	data, err := json.MarshalIndent(textConfig, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	fmt.Printf("💾 Configuration saved to: %s\n", configPath)
-	return nil
-}
 
 func parseHookFromYAML(content []byte) (*types.Hook, error) {
 	var hook types.Hook
@@ -305,3 +190,124 @@ func parseHookFromYAML(content []byte) (*types.Hook, error) {
 func installHookToSettings(hook *types.Hook) error {
 	return config.InstallHookToSettings(hook)
 }
+
+func executeSetupScript(setupScript string) error {
+	fmt.Println("🔧 Executing setup script...")
+	
+	// Create a temporary script file
+	tmpFile, err := os.CreateTemp("", "claude-helper-setup-*.sh")
+	if err != nil {
+		return fmt.Errorf("failed to create temp script file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+	
+	// Write the setup script to the temp file
+	if _, err := tmpFile.WriteString(setupScript); err != nil {
+		return fmt.Errorf("failed to write setup script: %w", err)
+	}
+	tmpFile.Close()
+	
+	// Make the script executable
+	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+		return fmt.Errorf("failed to make script executable: %w", err)
+	}
+	
+	// Execute the script
+	cmd := exec.Command("/bin/bash", tmpFile.Name())
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir, _ = os.Getwd() // Set working directory to current directory
+	
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("setup script failed: %w", err)
+	}
+	
+	fmt.Println("✓ Setup script executed successfully")
+	return nil
+}
+
+func configureTextExpanderMappings() error {
+	fmt.Println("🔧 Configuring Text Expander mappings...")
+	fmt.Println("You can create shortcuts that expand to longer text.")
+	fmt.Println("Example: -d -> '详细解释这段代码的功能、实现原理和使用方法'")
+	fmt.Println("Press Enter with empty marker to finish configuration.")
+	fmt.Println()
+
+	// Create a temporary mappings map for interactive configuration
+	mappings := make(map[string]string)
+
+	// Interactive input
+	reader := bufio.NewReader(os.Stdin)
+	
+	for {
+		fmt.Print("Enter marker (e.g., -d, -v, --explain): ")
+		marker, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read input: %w", err)
+		}
+		
+		marker = strings.TrimSpace(marker)
+		if marker == "" {
+			break // Empty input ends configuration
+		}
+
+		// Validate marker (use the function from config.go)
+		if !isValidMarker(marker) {
+			fmt.Println("❌ Invalid marker. Use format like: -d, -v, --explain, debug")
+			continue
+		}
+
+		fmt.Printf("Enter replacement text for '%s': ", marker)
+		replacement, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read replacement: %w", err)
+		}
+		
+		replacement = strings.TrimSpace(replacement)
+		if replacement == "" {
+			fmt.Println("❌ Replacement text cannot be empty")
+			continue
+		}
+
+		// Check if marker already exists
+		if existing, exists := mappings[marker]; exists {
+			fmt.Printf("⚠️  Marker '%s' already exists with value: '%s'\n", marker, existing)
+			fmt.Print("Overwrite? (y/N): ")
+			confirm, _ := reader.ReadString('\n')
+			if strings.ToLower(strings.TrimSpace(confirm)) != "y" {
+				continue
+			}
+		}
+
+		mappings[marker] = replacement
+		fmt.Printf("✅ Added mapping: '%s' → '%s'\n", marker, replacement)
+		fmt.Println()
+	}
+
+	// Store mappings in a temporary file for the setup script to use
+	tmpMappingsFile := ".claude-temp-mappings.txt"
+	if len(mappings) > 0 {
+		// Write mappings to temporary file
+		tmpFile, err := os.Create(tmpMappingsFile)
+		if err != nil {
+			return fmt.Errorf("failed to create temp mappings file: %w", err)
+		}
+		defer tmpFile.Close()
+		// Don't remove the file here - let the setup script handle cleanup
+
+		for marker, replacement := range mappings {
+			_, err := tmpFile.WriteString(fmt.Sprintf("%s\t%s\n", marker, replacement))
+			if err != nil {
+				return fmt.Errorf("failed to write mappings: %w", err)
+			}
+		}
+		
+		fmt.Printf("📝 Total mappings configured: %d\n", len(mappings))
+	} else {
+		fmt.Println("No mappings configured. Default mappings will be used.")
+	}
+
+	return nil
+}
+

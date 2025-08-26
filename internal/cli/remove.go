@@ -93,14 +93,12 @@ func confirmRemoval(name, componentType string) bool {
 }
 
 func removeAgent(name string) error {
-	// Get Claude agents directory
-	agentsDir, err := config.GetAgentsPath()
+	// Use project-local agents directory
+	wd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get working directory: %w", err)
 	}
-
-	// Build agent file path
-	agentPath := filepath.Join(agentsDir, name+".md")
+	agentPath := filepath.Join(wd, ".claude", "agents", name+".md")
 
 	// Check if file exists
 	if _, err := os.Stat(agentPath); os.IsNotExist(err) {
@@ -118,3 +116,4 @@ func removeAgent(name string) error {
 func removeHook(name string) error {
 	return config.RemoveHookFromSettings(name)
 }
+

@@ -185,11 +185,12 @@ func removeTextExpanderMapping(cmd *cobra.Command, args []string) error {
 }
 
 func getTextExpanderConfigPath() (string, error) {
-	homeDir, err := os.UserHomeDir()
+	// Use project-local config path instead of home directory
+	wd, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
-	return filepath.Join(homeDir, ".claude-helper", "text-expander-config.json"), nil
+	return filepath.Join(wd, ".claude", "config", "text-expander.json"), nil
 }
 
 func loadTextExpanderConfig(configPath string) (*TextExpanderConfig, error) {
@@ -220,4 +221,45 @@ func loadTextExpanderConfig(configPath string) (*TextExpanderConfig, error) {
 // TextExpanderConfig represents the configuration for text expander
 type TextExpanderConfig struct {
 	Mappings map[string]string `json:"mappings"`
+}
+
+func isValidMarker(marker string) bool {
+	if len(marker) == 0 {
+		return false
+	}
+	
+	// Allow markers starting with - or -- or just alphanumeric words
+	if strings.HasPrefix(marker, "-") {
+		return len(marker) > 1
+	}
+	
+	// Allow simple word markers
+	for _, char := range marker {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || 
+			 (char >= '0' && char <= '9') || char == '_' || char == '-') {
+			return false
+		}
+	}
+	
+	return true
+}
+
+func saveTextExpanderConfig(configPath string, textConfig *TextExpanderConfig) error {
+	// Create config directory if it doesn't exist
+	configDir := filepath.Dir(configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(textConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	fmt.Printf("💾 Configuration saved to: %s\n", configPath)
+	return nil
 }
