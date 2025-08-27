@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -257,12 +258,18 @@ func saveTextExpanderConfig(configPath string, textConfig *TextExpanderConfig) e
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(textConfig, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	// Create encoder to ensure proper UTF-8 handling
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false) // Don't escape HTML characters
+	encoder.SetIndent("", "  ")  // Pretty print with 2-space indentation
+	
+	if err := encoder.Encode(textConfig); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	// Write with explicit UTF-8 encoding
+	if err := os.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

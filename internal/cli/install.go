@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -143,11 +144,13 @@ func installHook(name, templatePath string, force bool) error {
 		return fmt.Errorf("failed to parse hook template: %w", err)
 	}
 
-	// Execute setup script if present
-	if hook.Setup != "" {
+	// Execute setup script if present (skip for text-expander as we handle it with Go code)
+	if hook.Setup != "" && name != "text-expander" {
 		if err := executeSetupScript(hook.Setup); err != nil {
 			return fmt.Errorf("failed to execute setup script: %w", err)
 		}
+	} else if name == "text-expander" {
+		fmt.Println("⏭️  Skipping setup script for text-expander (using Go configuration instead)")
 	}
 
 
@@ -302,8 +305,14 @@ func executeSetupScript(setupScript string) error {
 		}
 		tmpFile.Close()
 		
+		// Find available PowerShell executable
+		powerShellCmd := findPowerShellExecutable()
+		if powerShellCmd == "" {
+			return fmt.Errorf("PowerShell not found. Please install PowerShell or add it to PATH")
+		}
+		
 		// Execute the PowerShell script
-		cmd = exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile.Name())
+		cmd = exec.Command(powerShellCmd, "-ExecutionPolicy", "Bypass", "-File", tmpFile.Name())
 	} else {
 		// Unix/Linux/macOS - use bash
 		tmpFile, err = os.CreateTemp("", "claude-helper-setup-*.sh")
@@ -347,11 +356,32 @@ func configureTextExpanderMappings() error {
 	fmt.Println("Press Enter with empty marker to finish configuration.")
 	fmt.Println()
 
-	// Create a temporary mappings map for interactive configuration
-	mappings := make(map[string]string)
+	// Get config path
+	configPath, err := getTextExpanderConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+
+	// Load existing config or create new one
+	textConfig, err := loadTextExpanderConfig(configPath)
+	if err != nil {
+		// If config doesn't exist, create a new one with default mappings
+		textConfig = &TextExpanderConfig{
+			Mappings: map[string]string{
+				"-d": "该睡觉了",
+				"-z": "该睡觉了", 
+				"-v": "查看详细信息",
+				"-h": "显示帮助信息",
+				"-l": "列出所有项目",
+				"-s": "显示状态信息",
+			},
+			EscapeChar: "\\",
+		}
+	}
 
 	// Interactive input
 	reader := bufio.NewReader(os.Stdin)
+	added := 0
 	
 	for {
 		fmt.Print("Enter marker (e.g., -d, -v, --explain): ")
@@ -365,7 +395,7 @@ func configureTextExpanderMappings() error {
 			break // Empty input ends configuration
 		}
 
-		// Validate marker (use the function from config.go)
+		// Validate marker
 		if !isValidMarker(marker) {
 			fmt.Println("❌ Invalid marker. Use format like: -d, -v, --explain, debug")
 			continue
@@ -384,7 +414,7 @@ func configureTextExpanderMappings() error {
 		}
 
 		// Check if marker already exists
-		if existing, exists := mappings[marker]; exists {
+		if existing, exists := textConfig.Mappings[marker]; exists {
 			fmt.Printf("⚠️  Marker '%s' already exists with value: '%s'\n", marker, existing)
 			fmt.Print("Overwrite? (y/N): ")
 			confirm, _ := reader.ReadString('\n')
@@ -393,33 +423,21 @@ func configureTextExpanderMappings() error {
 			}
 		}
 
-		mappings[marker] = replacement
+		textConfig.Mappings[marker] = replacement
 		fmt.Printf("✅ Added mapping: '%s' → '%s'\n", marker, replacement)
+		added++
 		fmt.Println()
 	}
 
-	// Store mappings in a temporary file for the setup script to use
-	tmpMappingsFile := ".claude-temp-mappings.txt"
-	if len(mappings) > 0 {
-		// Write mappings to temporary file
-		tmpFile, err := os.Create(tmpMappingsFile)
-		if err != nil {
-			return fmt.Errorf("failed to create temp mappings file: %w", err)
-		}
-		defer tmpFile.Close()
-		// Don't remove the file here - let the setup script handle cleanup
-
-		for marker, replacement := range mappings {
-			_, err := tmpFile.WriteString(fmt.Sprintf("%s\t%s\n", marker, replacement))
-			if err != nil {
-				return fmt.Errorf("failed to write mappings: %w", err)
-			}
-		}
-		
-		fmt.Printf("📝 Total mappings configured: %d\n", len(mappings))
-	} else {
-		fmt.Println("No mappings configured. Default mappings will be used.")
+	// Save config to JSON file directly (no more temp files)
+	if err := saveTextExpanderConfig(configPath, textConfig); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
 	}
+	
+	if added > 0 {
+		fmt.Printf("📝 Total new mappings added: %d\n", added)
+	}
+	fmt.Printf("📝 Total mappings configured: %d\n", len(textConfig.Mappings))
 
 	return nil
 }
@@ -499,7 +517,13 @@ func createTextExpanderConfig() error {
 
 	configPath := filepath.Join(configDir, "text-expander.json")
 	
-	// Create config with proper Go JSON encoding to handle Chinese characters correctly
+	// Check if config file already exists - don't overwrite user's interactive configuration!
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Println("Text expander config already exists, skipping default config creation")
+		return nil
+	}
+	
+	// Only create default config if file doesn't exist
 	config := map[string]interface{}{
 		"mappings": map[string]string{
 			"-d": "该睡觉了",
@@ -512,18 +536,43 @@ func createTextExpanderConfig() error {
 		"escape_char": "\\",
 	}
 	
-	// Use Go's JSON encoder which handles UTF-8 correctly
-	jsonContent, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	// Use JSON encoder with proper UTF-8 handling
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false) // Don't escape HTML characters
+	encoder.SetIndent("", "  ")  // Pretty print with 2-space indentation
+	
+	if err := encoder.Encode(config); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
 	}
 	
-	if err := os.WriteFile(configPath, jsonContent, 0644); err != nil {
+	if err := os.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 	
 	fmt.Println("Text expander config created with proper UTF-8 encoding!")
 	return nil
+}
+
+// Note: Using shared functions from config.go in the same package
+
+// findPowerShellExecutable tries to find an available PowerShell executable
+func findPowerShellExecutable() string {
+	// Try different PowerShell executables in order of preference
+	powerShellCmds := []string{
+		"pwsh",        // PowerShell 7+ (cross-platform)
+		"powershell",  // Windows PowerShell 5.x
+		"pwsh.exe",    // PowerShell 7+ with .exe extension
+		"powershell.exe", // Windows PowerShell 5.x with .exe extension
+	}
+	
+	for _, cmd := range powerShellCmds {
+		if _, err := exec.LookPath(cmd); err == nil {
+			return cmd
+		}
+	}
+	
+	return "" // No PowerShell executable found
 }
 
 func convertBashToPowerShell(bashScript string) string {
