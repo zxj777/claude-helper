@@ -2,6 +2,47 @@
 import json
 import sys
 import os
+import re
+
+def apply_text_expansions_with_escape(text, mappings, escape_char='\\'):
+    """Apply text expansions with support for escape characters.
+    
+    Rules:
+    - \marker -> literal marker (no expansion)
+    - \\marker -> literal \ + expand marker  
+    - \\\marker -> literal \ + literal marker
+    - \\\\marker -> literal \\ + expand marker
+    """
+    if not mappings:
+        return text
+    
+    result = text
+    
+    # Process each mapping
+    for marker, replacement in mappings.items():
+        # Create a pattern that matches the marker with potential escaping
+        # We need to handle sequences of backslashes before the marker
+        pattern = r'(\\*)' + re.escape(marker)
+        
+        def replace_func(match):
+            backslashes = match.group(1)
+            backslash_count = len(backslashes)
+            
+            if backslash_count == 0:
+                # No backslashes, normal expansion
+                return replacement
+            elif backslash_count % 2 == 1:
+                # Odd number of backslashes: last one escapes the marker
+                # Return half the backslashes (rounded down) + literal marker
+                return '\\' * (backslash_count // 2) + marker
+            else:
+                # Even number of backslashes: marker is not escaped
+                # Return half the backslashes + expanded marker
+                return '\\' * (backslash_count // 2) + replacement
+        
+        result = re.sub(pattern, replace_func, result)
+    
+    return result
 
 try:
     # Read JSON input from stdin
@@ -20,10 +61,12 @@ try:
     with open(config_file, 'r') as f:
         config = json.load(f)
     
-    # Apply text expansions
-    expanded_prompt = prompt
-    for marker, replacement in config.get('mappings', {}).items():
-        expanded_prompt = expanded_prompt.replace(marker, replacement)
+    # Get escape character (default to backslash)
+    escape_char = config.get('escape_char', '\\')
+    mappings = config.get('mappings', {})
+    
+    # Apply text expansions with escape support
+    expanded_prompt = apply_text_expansions_with_escape(prompt, mappings, escape_char)
     
     # If prompt changed, output expanded prompt as context and allow through
     if prompt != expanded_prompt:

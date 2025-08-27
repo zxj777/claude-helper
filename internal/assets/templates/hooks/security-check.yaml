@@ -1,0 +1,7 @@
+name: security-check
+description: "Automatically scans code for common security vulnerabilities" 
+event: PostToolUse
+matcher: "Edit|Write|MultiEdit"
+command: "python3 .claude/hooks/security-check.py \"$FILE_PATH\""
+timeout: 15
+enabled: true
