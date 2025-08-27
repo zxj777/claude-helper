@@ -214,13 +214,19 @@ func loadTextExpanderConfig(configPath string) (*TextExpanderConfig, error) {
 	if textConfig.Mappings == nil {
 		textConfig.Mappings = make(map[string]string)
 	}
+	
+	// Set default escape character if not specified
+	if textConfig.EscapeChar == "" {
+		textConfig.EscapeChar = "\\"
+	}
 
 	return &textConfig, nil
 }
 
 // TextExpanderConfig represents the configuration for text expander
 type TextExpanderConfig struct {
-	Mappings map[string]string `json:"mappings"`
+	Mappings    map[string]string `json:"mappings"`
+	EscapeChar  string           `json:"escape_char,omitempty"`  // Default: "\"
 }
 
 func isValidMarker(marker string) bool {

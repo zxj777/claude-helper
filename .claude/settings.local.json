@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(make deps)",
+      "Bash(make:*)",
+      "Bash(go:*)",
+      "Bash(./claude-helper list)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(git tag:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

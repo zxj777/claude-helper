@@ -154,7 +154,7 @@ func IsHookInstalled(hookName string) (bool, error) {
 }
 
 // InstallHookToSettings adds a hook to Claude's settings.json file
-func InstallHookToSettings(hook *types.Hook) error {
+func InstallHookToSettings(hook *types.Hook, force bool) error {
 	settingsPath, err := GetSettingsPath()
 	if err != nil {
 		return err
@@ -181,29 +181,59 @@ func InstallHookToSettings(hook *types.Hook) error {
 	
 	// Merge the hook configuration
 	for eventName, eventHooks := range hookConfig {
+		// Convert new hooks to []interface{}
+		converted := make([]interface{}, len(eventHooks))
+		for i, hook := range eventHooks {
+			converted[i] = hook
+		}
+
 		if existingEventHooks, exists := settings.Hooks[eventName]; exists {
-			// Merge with existing hooks for this event
-			if existingArray, ok := existingEventHooks.([]interface{}); ok {
-				// Convert []map[string]interface{} to []interface{}
-				newHooks := make([]interface{}, len(eventHooks))
-				for i, hook := range eventHooks {
-					newHooks[i] = hook
+			if force {
+				// In force mode, find and replace existing hook with same name, or just add if not found
+				if existingArray, ok := existingEventHooks.([]interface{}); ok {
+					hookName := hook.Name
+					var updatedHooks []interface{}
+					
+					// Go through existing hooks and replace the one with same name
+					for _, existingHook := range existingArray {
+						shouldKeep := true
+						if hookMap, ok := existingHook.(map[string]interface{}); ok {
+							if hooks, ok := hookMap["hooks"].([]interface{}); ok {
+								for _, h := range hooks {
+									if hMap, ok := h.(map[string]interface{}); ok {
+										if cmd, ok := hMap["command"].(string); ok {
+											// If command contains hook name, replace this hook
+											if strings.Contains(cmd, hookName) {
+												shouldKeep = false
+												break
+											}
+										}
+									}
+								}
+							}
+						}
+						if shouldKeep {
+							updatedHooks = append(updatedHooks, existingHook)
+						}
+					}
+					
+					// Add the new hook
+					settings.Hooks[eventName] = append(updatedHooks, converted...)
+				} else {
+					// Replace entire event hooks if format is unexpected
+					settings.Hooks[eventName] = converted
 				}
-				settings.Hooks[eventName] = append(existingArray, newHooks...)
 			} else {
-				// Replace if existing format is unexpected - convert to []interface{}
-				converted := make([]interface{}, len(eventHooks))
-				for i, hook := range eventHooks {
-					converted[i] = hook
+				// Non-force mode: just append to existing hooks
+				if existingArray, ok := existingEventHooks.([]interface{}); ok {
+					settings.Hooks[eventName] = append(existingArray, converted...)
+				} else {
+					// Replace if existing format is unexpected
+					settings.Hooks[eventName] = converted
 				}
-				settings.Hooks[eventName] = converted
 			}
 		} else {
-			// Add new event hooks - convert to []interface{}
-			converted := make([]interface{}, len(eventHooks))
-			for i, hook := range eventHooks {
-				converted[i] = hook
-			}
+			// Add new event hooks (event doesn't exist yet)
 			settings.Hooks[eventName] = converted
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/zxj777/claude-helper/internal/assets"
 	"github.com/zxj777/claude-helper/internal/config"
 )
 
@@ -38,16 +39,10 @@ func listComponents(cmd *cobra.Command, args []string) error {
 	showHooks, _ := cmd.Flags().GetBool("hooks")
 	showInstalled, _ := cmd.Flags().GetBool("installed")
 
-	// Get current working directory and build templates path
-	wd, err := os.Getwd()
+	// Get templates directory from assets
+	templatesDir, err := assets.GetTemplatesDir()
 	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
-	}
-	templatesDir := filepath.Join(wd, "assets", "templates")
-
-	// Check if templates directory exists
-	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
-		return fmt.Errorf("templates directory not found at %s", templatesDir)
+		return fmt.Errorf("failed to get templates directory: %w", err)
 	}
 
 	fmt.Println("Scanning for templates...")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+	"github.com/zxj777/claude-helper/internal/assets"
 	"github.com/zxj777/claude-helper/internal/config"
 	"github.com/zxj777/claude-helper/pkg/types"
 )
@@ -53,7 +54,7 @@ func installComponent(cmd *cobra.Command, args []string) error {
 	case "agent":
 		err = installAgent(componentName, templatePath)
 	case "hook":
-		err = installHook(componentName, templatePath)
+		err = installHook(componentName, templatePath, force)
 	default:
 		return fmt.Errorf("unsupported component type: %s", componentType)
 	}
@@ -67,26 +68,17 @@ func installComponent(cmd *cobra.Command, args []string) error {
 }
 
 func findComponentTemplate(name string) (templatePath string, componentType string, err error) {
-	// Get current working directory and build templates path
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get working directory: %w", err)
-	}
-	templatesDir := filepath.Join(wd, "assets", "templates")
-
-	// Check for agent template
-	agentPath := filepath.Join(templatesDir, "agents", name+".md")
-	if _, err := os.Stat(agentPath); err == nil {
+	// Try to find agent template first
+	if agentPath, err := assets.GetTemplatePath("agent", name); err == nil {
 		return agentPath, "agent", nil
 	}
 
-	// Check for hook template
-	hookPath := filepath.Join(templatesDir, "hooks", name+".yaml")
-	if _, err := os.Stat(hookPath); err == nil {
+	// Try to find hook template
+	if hookPath, err := assets.GetTemplatePath("hook", name); err == nil {
 		return hookPath, "hook", nil
 	}
 
-	return "", "", fmt.Errorf("template not found")
+	return "", "", fmt.Errorf("template not found: %s", name)
 }
 
 func isComponentInstalled(name, componentType string) (bool, error) {
@@ -129,7 +121,7 @@ func installAgent(name, templatePath string) error {
 	return nil
 }
 
-func installHook(name, templatePath string) error {
+func installHook(name, templatePath string, force bool) error {
 	// Special handling for text-expander hook - configure mappings before setup
 	if name == "text-expander" {
 		if err := configureTextExpanderMappings(); err != nil {
@@ -156,8 +148,14 @@ func installHook(name, templatePath string) error {
 		}
 	}
 
+
+	// Copy associated Python/shell script files if they exist
+	if err := copyHookScriptFiles(name, filepath.Dir(templatePath)); err != nil {
+		return fmt.Errorf("failed to copy hook script files: %w", err)
+	}
+
 	// Install hook to Claude settings
-	return installHookToSettings(hook)
+	return installHookToSettings(hook, force)
 }
 
 
@@ -187,8 +185,82 @@ func parseHookFromYAML(content []byte) (*types.Hook, error) {
 	return &hook, nil
 }
 
-func installHookToSettings(hook *types.Hook) error {
-	return config.InstallHookToSettings(hook)
+
+func copyHookScriptFiles(hookName, templateDir string) error {
+	// Get current working directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	
+	// Create .claude/hooks directory
+	hooksDir := filepath.Join(wd, ".claude", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("failed to create hooks directory: %w", err)
+	}
+
+	// Look for associated script files (.py, .sh, .js, etc.)
+	scriptExtensions := []string{".py", ".sh", ".js", ".ts"}
+	
+	for _, ext := range scriptExtensions {
+		scriptName := hookName + ext
+		sourcePath := filepath.Join(templateDir, scriptName)
+		
+		// Check if script file exists
+		if _, err := os.Stat(sourcePath); err == nil {
+			// Copy the script file
+			targetPath := filepath.Join(hooksDir, scriptName)
+			
+			if err := copyFile(sourcePath, targetPath); err != nil {
+				return fmt.Errorf("failed to copy script file %s: %w", scriptName, err)
+			}
+			
+			// Make executable for shell scripts and Python scripts
+			if ext == ".sh" || ext == ".py" {
+				if err := os.Chmod(targetPath, 0755); err != nil {
+					return fmt.Errorf("failed to make script executable: %w", err)
+				}
+			}
+			
+			fmt.Printf("Hook script copied to: %s\n", targetPath)
+		}
+	}
+	
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	// Use io.Copy instead of WriteTo for compatibility
+	if _, err := sourceFile.Seek(0, 0); err != nil {
+		return err
+	}
+	
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	
+	if _, err := destFile.Write(content); err != nil {
+		return err
+	}
+
+	return destFile.Sync()
+}
+
+func installHookToSettings(hook *types.Hook, force bool) error {
+	return config.InstallHookToSettings(hook, force)
 }
 
 func executeSetupScript(setupScript string) error {
