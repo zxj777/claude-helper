@@ -17,7 +17,7 @@ setup: |
   import re
   
   def apply_text_expansions_with_escape(text, mappings, escape_char='\\'):
-      """Apply text expansions with support for escape characters.
+      r"""Apply text expansions with support for escape characters.
       
       Rules:
       - \marker -> literal marker (no expansion)
@@ -70,7 +70,7 @@ setup: |
       if not os.path.exists(config_file):
           sys.exit(0)
       
-      with open(config_file, 'r') as f:
+      with open(config_file, 'r', encoding='utf-8') as f:
           config = json.load(f)
       
       # Get escape character (default to backslash)
@@ -136,7 +136,8 @@ setup: |
       "-v": "查看详细信息",
       "-h": "显示帮助信息",
       "-l": "列出所有项目",
-      "-s": "显示状态信息"
+      "-s": "显示状态信息",
+      "-uu": "你是谁"
     },
     "escape_char": "\\"
   }
@@ -146,6 +147,6 @@ setup: |
   echo "Text expander hook installed successfully!"
   echo "Configuration file created at: .claude/config/text-expander.json"
   echo "Hook script created at: .claude/hooks/text-expander.py"
-command: .claude/hooks/run-python.sh .claude/hooks/text-expander.py
+command: python .claude/hooks/text-expander.py
 timeout: 10
 enabled: true

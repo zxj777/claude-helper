@@ -1,7 +1,6 @@
 package types
 
 import (
-	"runtime"
 	"strings"
 )
 
@@ -57,16 +56,10 @@ func (h *Hook) GetPlatformCommand() string {
 		return h.Command
 	}
 	
-	// Generate cross-platform command
-	if runtime.GOOS == "windows" {
-		// Replace run-python.sh with run-python.bat (Windows uses backslashes for the runner script)
-		cmd := strings.Replace(h.Command, ".claude/hooks/run-python.sh", ".claude\\hooks\\run-python.bat", -1)
-		return cmd
-	} else {
-		// Unix-like systems (macOS, Linux): convert any Windows format back to Unix format
-		cmd := strings.Replace(h.Command, ".claude\\hooks\\run-python.bat", ".claude/hooks/run-python.sh", -1)
-		return cmd
-	}
+	// Always use .sh script for cross-platform compatibility (bash is available on Windows now)
+	cmd := strings.Replace(h.Command, ".claude\\hooks\\run-python.bat", ".claude/hooks/run-python.sh", -1)
+	cmd = strings.Replace(cmd, ".claude/hooks/run-python.sh", ".claude/hooks/run-python.sh", -1)
+	return cmd
 }
 
 func containsRunPython(command string) bool {

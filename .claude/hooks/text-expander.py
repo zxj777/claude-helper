@@ -5,7 +5,7 @@ import os
 import re
 
 def apply_text_expansions_with_escape(text, mappings, escape_char='\\'):
-    """Apply text expansions with support for escape characters.
+    r"""Apply text expansions with support for escape characters.
     
     Rules:
     - \marker -> literal marker (no expansion)
@@ -58,7 +58,7 @@ try:
     if not os.path.exists(config_file):
         sys.exit(0)
     
-    with open(config_file, 'r') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
     # Get escape character (default to backslash)

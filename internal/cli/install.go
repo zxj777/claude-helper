@@ -585,7 +585,7 @@ try:
     if not os.path.exists(config_file):
         sys.exit(0)
     
-    with open(config_file, 'r') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
     # Get escape character (default to backslash)
@@ -732,7 +732,7 @@ try:
     config_file = '.claude/config/text-expander.json'
     if not os.path.exists(config_file):
         sys.exit(0)
-    with open(config_file, 'r') as f:
+    with open(config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
     escape_char = config.get('escape_char', '\\')
     mappings = config.get('mappings', {})

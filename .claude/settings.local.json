@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./claude-helper:*)",
+      "Bash(chmod:*)",
+      "Bash(claude-code --version)",
       "Bash(go build:*)"
     ],
     "deny": [],
