@@ -1,0 +1,7 @@
+name: auto-format
+description: "Automatically formats code files after editing with language-specific tools"
+event: PostToolUse
+matcher: "Edit|Write|MultiEdit"
+command: "python3 .claude/hooks/auto-format.py \"$FILE_PATH\""
+timeout: 10
+enabled: true
