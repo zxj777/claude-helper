@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "python .claude/hooks/text-expander.py",
+            "command": "bash .claude/hooks/run-python.sh .claude/hooks/text-expander.py",
             "timeout": 10,
             "type": "command"
           }

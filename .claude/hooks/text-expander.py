@@ -50,6 +50,15 @@ try:
     
     # Extract prompt
     prompt = input_data.get('prompt', '')
+    
+    # Clean the prompt to remove invalid Unicode characters
+    try:
+        # Encode and decode to clean up any invalid UTF-8 characters
+        prompt = prompt.encode('utf-8', errors='ignore').decode('utf-8')
+    except:
+        # If that fails, use ascii encoding as fallback
+        prompt = prompt.encode('ascii', errors='ignore').decode('ascii')
+    
     if not prompt:
         sys.exit(0)
     
@@ -68,11 +77,15 @@ try:
     # Apply text expansions with escape support
     expanded_prompt = apply_text_expansions_with_escape(prompt, mappings, escape_char)
     
-    # If prompt changed, output expanded prompt as context and allow through
+    # If prompt changed, add expanded text as additional context
     if prompt != expanded_prompt:
-        # Output expanded prompt as additional context for Claude
-        print(f"用户的意思是: {expanded_prompt}")
-        # Exit with code 0 to allow the original prompt through with added context
+        result = {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": f"用户的意思是: {expanded_prompt}"
+            }
+        }
+        print(json.dumps(result, ensure_ascii=True), flush=True)
         sys.exit(0)
     
     # No change needed, allow original prompt through
@@ -80,4 +93,12 @@ try:
         
 except Exception as e:
     # On any error, allow original prompt through
+    # For debugging, could log error to a file
+    try:
+        with open('.claude/hook-error.log', 'a', encoding='utf-8', errors='replace') as f:
+            import traceback
+            f.write(f"Text-expander error: {type(e).__name__}: {str(e)}\\n")
+            f.write(f"Traceback: {traceback.format_exc()}\\n")
+    except:
+        pass  # Ignore logging errors
     sys.exit(0)
