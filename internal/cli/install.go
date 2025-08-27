@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -153,6 +154,18 @@ func installHook(name, templatePath string, force bool) error {
 	// Copy associated Python/shell script files if they exist
 	if err := copyHookScriptFiles(name, filepath.Dir(templatePath)); err != nil {
 		return fmt.Errorf("failed to copy hook script files: %w", err)
+	}
+
+	// Ensure cross-platform run-python scripts exist
+	if err := ensureCrossPlatformRunPythonScripts(); err != nil {
+		return fmt.Errorf("failed to create cross-platform run-python scripts: %w", err)
+	}
+
+	// Special handling for text-expander - fix config file with Go to ensure proper encoding
+	if name == "text-expander" {
+		if err := createTextExpanderConfig(); err != nil {
+			return fmt.Errorf("failed to create text-expander config: %w", err)
+		}
 	}
 
 	// Install hook to Claude settings
@@ -411,6 +424,108 @@ func configureTextExpanderMappings() error {
 	return nil
 }
 
+func ensureCrossPlatformRunPythonScripts() error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	
+	hooksDir := filepath.Join(wd, ".claude", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("failed to create hooks directory: %w", err)
+	}
+
+	// Create run-python.bat for Windows
+	batPath := filepath.Join(hooksDir, "run-python.bat")
+	batContent := `@echo off
+setlocal
+
+REM Try different Python commands
+python3 %* 2>nul
+if %errorlevel% == 0 goto :eof
+
+python %* 2>nul
+if %errorlevel% == 0 goto :eof
+
+py -3 %* 2>nul
+if %errorlevel% == 0 goto :eof
+
+py %* 2>nul
+if %errorlevel% == 0 goto :eof
+
+echo Python not found. Please install Python or add it to PATH.
+exit /b 1
+`
+	
+	if err := os.WriteFile(batPath, []byte(batContent), 0644); err != nil {
+		return fmt.Errorf("failed to create run-python.bat: %w", err)
+	}
+
+	// Create run-python.sh for Unix-like systems
+	shPath := filepath.Join(hooksDir, "run-python.sh")
+	shContent := `#!/bin/bash
+
+# Try different Python commands
+if command -v python3 > /dev/null 2>&1; then
+    python3 "$@"
+elif command -v python > /dev/null 2>&1; then
+    python "$@"
+elif command -v py > /dev/null 2>&1; then
+    py -3 "$@"
+else
+    echo "Python not found. Please install Python or add it to PATH." >&2
+    exit 1
+fi
+`
+	
+	if err := os.WriteFile(shPath, []byte(shContent), 0755); err != nil {
+		return fmt.Errorf("failed to create run-python.sh: %w", err)
+	}
+
+	fmt.Println("Cross-platform run-python scripts created successfully!")
+	return nil
+}
+
+func createTextExpanderConfig() error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	
+	configDir := filepath.Join(wd, ".claude", "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "text-expander.json")
+	
+	// Create config with proper Go JSON encoding to handle Chinese characters correctly
+	config := map[string]interface{}{
+		"mappings": map[string]string{
+			"-d": "该睡觉了",
+			"-z": "该睡觉了",
+			"-v": "查看详细信息",
+			"-h": "显示帮助信息",
+			"-l": "列出所有项目",
+			"-s": "显示状态信息",
+		},
+		"escape_char": "\\",
+	}
+	
+	// Use Go's JSON encoder which handles UTF-8 correctly
+	jsonContent, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	
+	if err := os.WriteFile(configPath, jsonContent, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	
+	fmt.Println("Text expander config created with proper UTF-8 encoding!")
+	return nil
+}
+
 func convertBashToPowerShell(bashScript string) string {
 	// For Windows, we'll create a simplified PowerShell script
 	// that mimics the bash script functionality
@@ -491,21 +606,23 @@ if (Test-Path ".claude-temp-mappings.txt") {
     $config | ConvertTo-Json -Depth 2 | Out-File -FilePath ".claude\config\text-expander.json" -Encoding UTF8
     Remove-Item ".claude-temp-mappings.txt" -ErrorAction SilentlyContinue
 } else {
-    # Default config
-    $defaultJson = @'
-{
-  "mappings": {
-    "-d": "该睡觉了",
-    "-z": "该睡觉了",
-    "-v": "查看详细信息",
-    "-h": "显示帮助信息",
-    "-l": "列出所有项目",
-    "-s": "显示状态信息"
-  },
-  "escape_char": "\\"
-}
-'@
-    $defaultJson | Out-File -FilePath ".claude\config\text-expander.json" -Encoding UTF8
+    # Default config - create JSON manually to avoid encoding issues
+    $jsonBuilder = [System.Text.StringBuilder]::new()
+    [void]$jsonBuilder.AppendLine('{')
+    [void]$jsonBuilder.AppendLine('  "mappings": {')
+    [void]$jsonBuilder.AppendLine('    "-d": "该睡觉了",')
+    [void]$jsonBuilder.AppendLine('    "-z": "该睡觉了",')
+    [void]$jsonBuilder.AppendLine('    "-v": "查看详细信息",')
+    [void]$jsonBuilder.AppendLine('    "-h": "显示帮助信息",')
+    [void]$jsonBuilder.AppendLine('    "-l": "列出所有项目",')
+    [void]$jsonBuilder.AppendLine('    "-s": "显示状态信息"')
+    [void]$jsonBuilder.AppendLine('  },')
+    [void]$jsonBuilder.AppendLine('  "escape_char": "\\"')
+    [void]$jsonBuilder.AppendLine('}')
+    
+    # Write with explicit UTF-8 encoding
+    $jsonContent = $jsonBuilder.ToString()
+    [System.IO.File]::WriteAllText(".claude\config\text-expander.json", $jsonContent, [System.Text.Encoding]::UTF8)
 }
 
 Write-Host "Text expander hook installed successfully!"

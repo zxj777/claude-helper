@@ -4,27 +4,7 @@
       {
         "hooks": [
           {
-            "command": "python3 .claude/hooks/auto-review.py \"$PROMPT\"",
-            "timeout": 15,
-            "type": "command"
-          }
-        ],
-        "matcher": "*(review|质量|quality|bug|问题|优化|refactor)*"
-      },
-      {
-        "hooks": [
-          {
-            "command": "python3 .claude/hooks/auto-review.py \"$PROMPT\"",
-            "timeout": 15,
-            "type": "command"
-          }
-        ],
-        "matcher": "*(review|质量|quality|bug|问题|优化|refactor)*"
-      },
-      {
-        "hooks": [
-          {
-            "command": "python3 .claude/hooks/text-expander.py",
+            "command": ".claude\\hooks\\run-python.bat .claude/hooks/text-expander.py",
             "timeout": 10,
             "type": "command"
           }

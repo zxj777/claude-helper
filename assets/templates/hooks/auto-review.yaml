@@ -2,6 +2,6 @@ name: auto-review
 description: "Intelligently triggers code review agent with context awareness"
 event: UserPromptSubmit
 matcher: "*(review|质量|quality|bug|问题|优化|refactor)*"
-command: "python3 .claude/hooks/auto-review.py \"$PROMPT\""
+command: ".claude/hooks/run-python.sh .claude/hooks/auto-review.py \"$PROMPT\""
 timeout: 15
 enabled: true

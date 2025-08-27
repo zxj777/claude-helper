@@ -1,5 +1,10 @@
 package types
 
+import (
+	"runtime"
+	"strings"
+)
+
 // HookEvent represents the available hook events in Claude Code
 type HookEvent string
 
@@ -32,7 +37,7 @@ type Hook struct {
 func (h *Hook) ToClaudeHookEntry() map[string]interface{} {
 	hook := map[string]interface{}{
 		"type":    "command", 
-		"command": h.Command,
+		"command": h.GetPlatformCommand(),
 	}
 	
 	if h.Timeout > 0 {
@@ -43,6 +48,29 @@ func (h *Hook) ToClaudeHookEntry() map[string]interface{} {
 		"matcher": h.Matcher,
 		"hooks":   []map[string]interface{}{hook},
 	}
+}
+
+// GetPlatformCommand returns the appropriate command for the current platform
+func (h *Hook) GetPlatformCommand() string {
+	// If command doesn't contain run-python, return as is
+	if !containsRunPython(h.Command) {
+		return h.Command
+	}
+	
+	// Generate cross-platform command
+	if runtime.GOOS == "windows" {
+		// Replace run-python.sh with run-python.bat (Windows uses backslashes for the runner script)
+		cmd := strings.Replace(h.Command, ".claude/hooks/run-python.sh", ".claude\\hooks\\run-python.bat", -1)
+		return cmd
+	} else {
+		// Unix-like systems (macOS, Linux): convert any Windows format back to Unix format
+		cmd := strings.Replace(h.Command, ".claude\\hooks\\run-python.bat", ".claude/hooks/run-python.sh", -1)
+		return cmd
+	}
+}
+
+func containsRunPython(command string) bool {
+	return strings.Contains(command, "run-python.bat") || strings.Contains(command, "run-python.sh")
 }
 
 // MergeHooksIntoClaudeConfig merges multiple hooks into Claude's settings format
@@ -68,7 +96,7 @@ func MergeHooksIntoClaudeConfig(hooks []Hook) map[string]interface{} {
 		
 		hookCmd := map[string]interface{}{
 			"type":    "command",
-			"command": hook.Command,
+			"command": hook.GetPlatformCommand(),
 		}
 		if hook.Timeout > 0 {
 			hookCmd["timeout"] = hook.Timeout

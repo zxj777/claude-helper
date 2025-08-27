@@ -146,6 +146,6 @@ setup: |
   echo "Text expander hook installed successfully!"
   echo "Configuration file created at: .claude/config/text-expander.json"
   echo "Hook script created at: .claude/hooks/text-expander.py"
-command: python3 .claude/hooks/text-expander.py
+command: .claude/hooks/run-python.sh .claude/hooks/text-expander.py
 timeout: 10
 enabled: true
