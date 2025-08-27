@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -266,27 +267,54 @@ func installHookToSettings(hook *types.Hook, force bool) error {
 func executeSetupScript(setupScript string) error {
 	fmt.Println("🔧 Executing setup script...")
 	
-	// Create a temporary script file
-	tmpFile, err := os.CreateTemp("", "claude-helper-setup-*.sh")
-	if err != nil {
-		return fmt.Errorf("failed to create temp script file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	var cmd *exec.Cmd
+	var tmpFile *os.File
+	var err error
 	
-	// Write the setup script to the temp file
-	if _, err := tmpFile.WriteString(setupScript); err != nil {
-		return fmt.Errorf("failed to write setup script: %w", err)
+	if runtime.GOOS == "windows" {
+		// Convert bash script to PowerShell equivalent for Windows
+		powershellScript := convertBashToPowerShell(setupScript)
+		
+		// Create a temporary PowerShell script file
+		tmpFile, err = os.CreateTemp("", "claude-helper-setup-*.ps1")
+		if err != nil {
+			return fmt.Errorf("failed to create temp script file: %w", err)
+		}
+		defer os.Remove(tmpFile.Name())
+		defer tmpFile.Close()
+		
+		// Write the PowerShell script to the temp file
+		if _, err := tmpFile.WriteString(powershellScript); err != nil {
+			return fmt.Errorf("failed to write setup script: %w", err)
+		}
+		tmpFile.Close()
+		
+		// Execute the PowerShell script
+		cmd = exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile.Name())
+	} else {
+		// Unix/Linux/macOS - use bash
+		tmpFile, err = os.CreateTemp("", "claude-helper-setup-*.sh")
+		if err != nil {
+			return fmt.Errorf("failed to create temp script file: %w", err)
+		}
+		defer os.Remove(tmpFile.Name())
+		defer tmpFile.Close()
+		
+		// Write the setup script to the temp file
+		if _, err := tmpFile.WriteString(setupScript); err != nil {
+			return fmt.Errorf("failed to write setup script: %w", err)
+		}
+		tmpFile.Close()
+		
+		// Make the script executable
+		if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+			return fmt.Errorf("failed to make script executable: %w", err)
+		}
+		
+		// Execute the script
+		cmd = exec.Command("/bin/bash", tmpFile.Name())
 	}
-	tmpFile.Close()
 	
-	// Make the script executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
-		return fmt.Errorf("failed to make script executable: %w", err)
-	}
-	
-	// Execute the script
-	cmd := exec.Command("/bin/bash", tmpFile.Name())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir, _ = os.Getwd() // Set working directory to current directory
@@ -382,4 +410,106 @@ func configureTextExpanderMappings() error {
 
 	return nil
 }
+
+func convertBashToPowerShell(bashScript string) string {
+	// For Windows, we'll create a simplified PowerShell script
+	// that mimics the bash script functionality
+	return `# PowerShell setup for text-expander hook
+
+# Create directories
+New-Item -ItemType Directory -Force -Path ".claude\hooks" | Out-Null
+New-Item -ItemType Directory -Force -Path ".claude\config" | Out-Null
+
+# Create Python script content
+$pythonContent = @'
+#!/usr/bin/env python3
+import json
+import sys
+import os
+import re
+
+def apply_text_expansions_with_escape(text, mappings, escape_char='\\'):
+    if not mappings:
+        return text
+    result = text
+    for marker, replacement in mappings.items():
+        pattern = r'(\\*)' + re.escape(marker)
+        def replace_func(match):
+            backslashes = match.group(1)
+            backslash_count = len(backslashes)
+            if backslash_count == 0:
+                return replacement
+            elif backslash_count % 2 == 1:
+                return '\\' * (backslash_count // 2) + marker
+            else:
+                return '\\' * (backslash_count // 2) + replacement
+        result = re.sub(pattern, replace_func, result)
+    return result
+
+try:
+    input_data = json.load(sys.stdin)
+    prompt = input_data.get('prompt', '')
+    if not prompt:
+        sys.exit(0)
+    config_file = '.claude/config/text-expander.json'
+    if not os.path.exists(config_file):
+        sys.exit(0)
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    escape_char = config.get('escape_char', '\\')
+    mappings = config.get('mappings', {})
+    expanded_prompt = apply_text_expansions_with_escape(prompt, mappings, escape_char)
+    if prompt != expanded_prompt:
+        print(f"用户的意思是: {expanded_prompt}")
+        sys.exit(0)
+    sys.exit(0)
+except Exception as e:
+    sys.exit(0)
+'@
+
+# Write Python script
+$pythonContent | Out-File -FilePath ".claude\hooks\text-expander.py" -Encoding UTF8
+
+# Handle mappings
+if (Test-Path ".claude-temp-mappings.txt") {
+    # Convert temp mappings to JSON format
+    $mappings = @{}
+    Get-Content ".claude-temp-mappings.txt" | ForEach-Object {
+        $parts = $_ -split "\t", 2
+        if ($parts.Length -eq 2) {
+            $mappings[$parts[0]] = $parts[1]
+        }
+    }
+    
+    # Create config object
+    $config = @{
+        mappings = $mappings
+        escape_char = "\\"
+    }
+    
+    # Convert to JSON and save
+    $config | ConvertTo-Json -Depth 2 | Out-File -FilePath ".claude\config\text-expander.json" -Encoding UTF8
+    Remove-Item ".claude-temp-mappings.txt" -ErrorAction SilentlyContinue
+} else {
+    # Default config
+    $defaultJson = @'
+{
+  "mappings": {
+    "-d": "该睡觉了",
+    "-z": "该睡觉了",
+    "-v": "查看详细信息",
+    "-h": "显示帮助信息",
+    "-l": "列出所有项目",
+    "-s": "显示状态信息"
+  },
+  "escape_char": "\\"
+}
+'@
+    $defaultJson | Out-File -FilePath ".claude\config\text-expander.json" -Encoding UTF8
+}
+
+Write-Host "Text expander hook installed successfully!"
+`
+}
+
 

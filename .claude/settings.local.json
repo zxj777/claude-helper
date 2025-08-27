@@ -8,7 +8,8 @@
       "Bash(./claude-helper list)",
       "Bash(chmod:*)",
       "Bash(python3:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": [],
     "ask": []

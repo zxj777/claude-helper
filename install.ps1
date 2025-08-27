@@ -50,5 +50,13 @@ if ($UserPath -notlike "*$InstallDir*") {
 }
 
 Write-Host "Installation complete!"
-Write-Host "Please restart your terminal and run 'claude-helper --help'"
-Write-Host "Or run directly: $OutputPath"
+Write-Host ""
+Write-Host "The binary has been installed to: $OutputPath"
+Write-Host "Added $InstallDir to user PATH"
+Write-Host ""
+Write-Host "IMPORTANT: To use 'claude-helper' command:"
+Write-Host "1. Restart your terminal/IDE completely (close and reopen)"
+Write-Host "2. Or run the full path: $OutputPath"
+Write-Host "3. Or in current session: `$env:PATH += ';$InstallDir'; claude-helper --help"
+Write-Host ""
+Write-Host "If you are using an IDE (like VS Code), the IDE PowerShell may need to be restarted separately."
