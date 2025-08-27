@@ -164,8 +164,11 @@ func installHook(name, templatePath string, force bool) error {
 		return fmt.Errorf("failed to create cross-platform run-python scripts: %w", err)
 	}
 
-	// Special handling for text-expander - fix config file with Go to ensure proper encoding
+	// Special handling for text-expander - create Python script and config file
 	if name == "text-expander" {
+		if err := createTextExpanderPythonScript(); err != nil {
+			return fmt.Errorf("failed to create text-expander Python script: %w", err)
+		}
 		if err := createTextExpanderConfig(); err != nil {
 			return fmt.Errorf("failed to create text-expander config: %w", err)
 		}
@@ -350,33 +353,35 @@ func executeSetupScript(setupScript string) error {
 }
 
 func configureTextExpanderMappings() error {
-	fmt.Println("🔧 Configuring Text Expander mappings...")
-	fmt.Println("You can create shortcuts that expand to longer text.")
-	fmt.Println("Example: -d -> '详细解释这段代码的功能、实现原理和使用方法'")
-	fmt.Println("Press Enter with empty marker to finish configuration.")
-	fmt.Println()
-
 	// Get config path
 	configPath, err := getTextExpanderConfigPath()
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
 
-	// Load existing config or create new one
-	textConfig, err := loadTextExpanderConfig(configPath)
-	if err != nil {
-		// If config doesn't exist, create a new one with default mappings
-		textConfig = &TextExpanderConfig{
-			Mappings: map[string]string{
-				"-d": "该睡觉了",
-				"-z": "该睡觉了", 
-				"-v": "查看详细信息",
-				"-h": "显示帮助信息",
-				"-l": "列出所有项目",
-				"-s": "显示状态信息",
-			},
-			EscapeChar: "\\",
-		}
+	// Check if config already exists - if so, skip interactive configuration
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Println("🔧 Text Expander config already exists, skipping interactive configuration")
+		return nil
+	}
+
+	fmt.Println("🔧 Configuring Text Expander mappings...")
+	fmt.Println("You can create shortcuts that expand to longer text.")
+	fmt.Println("Example: -d -> '详细解释这段代码的功能、实现原理和使用方法'")
+	fmt.Println("Press Enter with empty marker to finish configuration.")
+	fmt.Println()
+
+	// Create new config with default mappings
+	textConfig := &TextExpanderConfig{
+		Mappings: map[string]string{
+			"-d": "该睡觉了",
+			"-z": "该睡觉了", 
+			"-v": "查看详细信息",
+			"-h": "显示帮助信息",
+			"-l": "列出所有项目",
+			"-s": "显示状态信息",
+		},
+		EscapeChar: "\\",
 	}
 
 	// Interactive input
@@ -387,7 +392,9 @@ func configureTextExpanderMappings() error {
 		fmt.Print("Enter marker (e.g., -d, -v, --explain): ")
 		marker, err := reader.ReadString('\n')
 		if err != nil {
-			return fmt.Errorf("failed to read input: %w", err)
+			// If we can't read input (e.g., not in a terminal), use default config
+			fmt.Println("\nNo interactive input available, using default configuration")
+			break
 		}
 		
 		marker = strings.TrimSpace(marker)
@@ -501,6 +508,113 @@ fi
 	}
 
 	fmt.Println("Cross-platform run-python scripts created successfully!")
+	return nil
+}
+
+func createTextExpanderPythonScript() error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	
+	hooksDir := filepath.Join(wd, ".claude", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("failed to create hooks directory: %w", err)
+	}
+
+	pythonScriptPath := filepath.Join(hooksDir, "text-expander.py")
+	
+	// Python script content (extracted from the YAML setup script)
+	pythonContent := `#!/usr/bin/env python3
+import json
+import sys
+import os
+import re
+
+def apply_text_expansions_with_escape(text, mappings, escape_char='\\'):
+    """Apply text expansions with support for escape characters.
+    
+    Rules:
+    - \marker -> literal marker (no expansion)
+    - \\marker -> literal \ + expand marker  
+    - \\\marker -> literal \ + literal marker
+    - \\\\marker -> literal \\ + expand marker
+    """
+    if not mappings:
+        return text
+    
+    result = text
+    
+    # Process each mapping
+    for marker, replacement in mappings.items():
+        # Create a pattern that matches the marker with potential escaping
+        # We need to handle sequences of backslashes before the marker
+        pattern = r'(\\*)' + re.escape(marker)
+        
+        def replace_func(match):
+            backslashes = match.group(1)
+            backslash_count = len(backslashes)
+            
+            if backslash_count == 0:
+                # No backslashes, normal expansion
+                return replacement
+            elif backslash_count % 2 == 1:
+                # Odd number of backslashes: last one escapes the marker
+                # Return half the backslashes (rounded down) + literal marker
+                return '\\' * (backslash_count // 2) + marker
+            else:
+                # Even number of backslashes: marker is not escaped
+                # Return half the backslashes + expanded marker
+                return '\\' * (backslash_count // 2) + replacement
+        
+        result = re.sub(pattern, replace_func, result)
+    
+    return result
+
+try:
+    # Read JSON input from stdin
+    input_data = json.load(sys.stdin)
+    
+    # Extract prompt
+    prompt = input_data.get('prompt', '')
+    if not prompt:
+        sys.exit(0)
+    
+    # Load text expansion config from project .claude/config directory
+    config_file = '.claude/config/text-expander.json'
+    if not os.path.exists(config_file):
+        sys.exit(0)
+    
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+    
+    # Get escape character (default to backslash)
+    escape_char = config.get('escape_char', '\\')
+    mappings = config.get('mappings', {})
+    
+    # Apply text expansions with escape support
+    expanded_prompt = apply_text_expansions_with_escape(prompt, mappings, escape_char)
+    
+    # If prompt changed, output expanded prompt as context and allow through
+    if prompt != expanded_prompt:
+        # Output expanded prompt as additional context for Claude
+        print(f"用户的意思是: {expanded_prompt}")
+        # Exit with code 0 to allow the original prompt through with added context
+        sys.exit(0)
+    
+    # No change needed, allow original prompt through
+    sys.exit(0)
+        
+except Exception as e:
+    # On any error, allow original prompt through
+    sys.exit(0)
+`
+
+	if err := os.WriteFile(pythonScriptPath, []byte(pythonContent), 0755); err != nil {
+		return fmt.Errorf("failed to write Python script: %w", err)
+	}
+
+	fmt.Printf("Text expander Python script created at: %s\n", pythonScriptPath)
 	return nil
 }
 
