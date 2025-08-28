@@ -9,7 +9,7 @@ setup: |
   # Create the Python hook script in .claude/hooks/
   mkdir -p .claude/hooks
   
-  cat > .claude/hooks/text-expander.py << 'EOF'
+  cat > .claude/hooks/text-expander.py << '  EOF'
   #!/usr/bin/env python3
   import json
   import sys
@@ -114,13 +114,13 @@ setup: |
       except:
           pass  # Ignore logging errors
       sys.exit(0)
-EOF
+  EOF
   
   # Make the Python script executable
   chmod +x .claude/hooks/text-expander.py
   
   # Create cross-platform Python runner script
-  cat > .claude/hooks/run-python.sh << 'EOF'
+  cat > .claude/hooks/run-python.sh << '  EOF'
   #!/bin/bash
   
   # Cross-platform Python runner script
@@ -136,7 +136,7 @@ EOF
       echo "Python not found. Please install Python or add it to PATH." >&2
       exit 1
   fi
-EOF
+  EOF
 
   # Make the runner script executable
   chmod +x .claude/hooks/run-python.sh
@@ -171,7 +171,7 @@ EOF
     rm -f .claude-temp-mappings.txt
   else
     # Use default mappings if no interactive configuration
-    cat > .claude/config/text-expander.json << 'EOF'
+    cat > .claude/config/text-expander.json << '  EOF'
   {
     "mappings": {
       "-d": "该睡觉了",
@@ -184,7 +184,7 @@ EOF
     },
     "escape_char": "\\"
   }
-EOF
+  EOF
   fi
   
   echo "Text expander hook installed successfully!"
