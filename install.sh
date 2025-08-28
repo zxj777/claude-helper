@@ -21,6 +21,18 @@ esac
 case $OS in
     linux) OS="linux" ;;
     darwin) OS="darwin" ;;
+    mingw*|msys*|cygwin*) 
+        OS="windows"
+        INSTALL_DIR="$HOME/bin"
+        # Create install directory if it doesn't exist
+        mkdir -p "$INSTALL_DIR"
+        # Add to PATH if not already there
+        if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+            echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> ~/.bashrc
+            echo "Added $INSTALL_DIR to PATH in ~/.bashrc"
+            echo "Please run: source ~/.bashrc or restart your terminal"
+        fi
+        ;;
     *) echo "Unsupported OS: $OS"; exit 1 ;;
 esac
 
@@ -57,11 +69,17 @@ fi
 chmod +x "$TEMP_FILE"
 
 # Install
-echo "Installing to $INSTALL_DIR/$BINARY_NAME..."
-if [ -w "$INSTALL_DIR" ]; then
-    mv "$TEMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+if [ "$OS" = "windows" ]; then
+    TARGET_FILE="$INSTALL_DIR/$BINARY_NAME.exe"
 else
-    sudo mv "$TEMP_FILE" "$INSTALL_DIR/$BINARY_NAME"
+    TARGET_FILE="$INSTALL_DIR/$BINARY_NAME"
+fi
+
+echo "Installing to $TARGET_FILE..."
+if [ "$OS" = "windows" ] || [ -w "$INSTALL_DIR" ]; then
+    mv "$TEMP_FILE" "$TARGET_FILE"
+else
+    sudo mv "$TEMP_FILE" "$TARGET_FILE"
 fi
 
 echo "Installation complete!"
