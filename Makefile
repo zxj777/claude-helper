@@ -3,7 +3,7 @@
 .PHONY: build clean install test fmt vet deps help
 
 # Binary name
-BINARY_NAME=claude-helper
+BINARY_NAME=cchp
 
 # Build directory
 BUILD_DIR=bin

@@ -114,7 +114,7 @@ setup: |
       except:
           pass  # Ignore logging errors
       sys.exit(0)
-  EOF
+EOF
   
   # Make the Python script executable
   chmod +x .claude/hooks/text-expander.py
@@ -184,7 +184,7 @@ EOF
     },
     "escape_char": "\\"
   }
-  EOF
+EOF
   fi
   
   echo "Text expander hook installed successfully!"

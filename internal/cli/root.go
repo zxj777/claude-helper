@@ -14,7 +14,7 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "claude-helper",
+	Use:   "cchp",
 	Short: "A CLI tool to manage Claude Code hooks and agents",
 	Long: `Claude Helper is a command-line tool that helps you manage 
 Claude Code hooks and sub-agents efficiently.

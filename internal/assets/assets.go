@@ -12,12 +12,12 @@ import (
 var templatesFS embed.FS
 
 // GetTemplatesDir returns the path to the templates directory
-// If running from source (development), it uses the local assets/templates
+// If running from source (development), it uses the local internal/assets/templates
 // If running from built binary, it extracts embedded files to a temp location
 func GetTemplatesDir() (string, error) {
 	// First try to find local templates directory (for development)
 	if wd, err := os.Getwd(); err == nil {
-		localTemplatesDir := filepath.Join(wd, "assets", "templates")
+		localTemplatesDir := filepath.Join(wd, "internal", "assets", "templates")
 		if _, err := os.Stat(localTemplatesDir); err == nil {
 			return localTemplatesDir, nil
 		}

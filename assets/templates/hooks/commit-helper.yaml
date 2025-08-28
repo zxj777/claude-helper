@@ -1,7 +1,0 @@
-name: commit-helper
-description: "Intelligently analyzes changes and suggests commit messages"
-event: UserPromptSubmit
-matcher: "*(commit|提交|git commit|message)*"
-command: "python3 .claude/hooks/commit-helper.py \"$PROMPT\""
-timeout: 20
-enabled: true
