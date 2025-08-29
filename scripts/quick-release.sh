@@ -143,7 +143,7 @@ log "Starting quick release for version $VERSION..."
 
 # Step 1: Build
 log "Building binaries..."
-./build.sh "$VERSION"
+../build.sh "$VERSION"
 success "Build completed"
 
 # Step 2: Commit any changes (if needed)

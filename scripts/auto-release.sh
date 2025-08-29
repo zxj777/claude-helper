@@ -259,9 +259,9 @@ main() {
     # Build binaries
     log_info "Building binaries..."
     if [[ "$DRY_RUN" != true ]]; then
-        ./build.sh "$VERSION"
+        ../build.sh "$VERSION"
     else
-        echo "Would run: ./build.sh $VERSION"
+        echo "Would run: ../build.sh $VERSION"
     fi
     log_success "Build completed"
     

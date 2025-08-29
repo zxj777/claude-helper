@@ -6,7 +6,7 @@ VERSION=${1:-"v1.0.0"}
 REPO="zxj777/claude-helper"
 
 if [ ! -d "dist" ]; then
-    echo "Error: dist directory not found. Run ./build.sh first."
+    echo "Error: dist directory not found. Run ../build.sh first."
     exit 1
 fi
 
