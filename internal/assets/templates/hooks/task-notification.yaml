@@ -148,22 +148,57 @@ setup: |
       except Exception as e:
           return False
   
+  def get_platform_system_sound():
+      """Get platform-appropriate system notification sound"""
+      system = platform.system().lower()
+      
+      if system == 'darwin':  # macOS
+          return '/System/Library/Sounds/Glass.aiff'
+      elif system == 'windows':  # Windows
+          return 'C:\\Windows\\Media\\Windows Ding.wav'
+      elif system == 'linux':  # Linux
+          # Try common Linux notification sounds
+          candidates = [
+              '/usr/share/sounds/alsa/Side_Left.wav',
+              '/usr/share/sounds/ubuntu/notifications/Blip.ogg',
+              '/usr/share/sounds/generic/notifications/complete.oga',
+              '/usr/share/sounds/freedesktop/stereo/complete.oga'
+          ]
+          
+          for candidate in candidates:
+              if os.path.exists(candidate):
+                  return candidate
+          
+          # Fallback
+          return '/usr/share/sounds/alsa/Side_Left.wav'
+      
+      return None
+
   def get_sound_path():
-      """Get the path to the embedded notification sound"""
-      # Check in project .claude/sounds directory first
-      project_sound = os.path.join('.claude', 'sounds', 'notification.aiff')
-      if os.path.exists(project_sound):
-          return project_sound
+      """Get the path to the notification sound with platform-aware fallbacks"""
+      # Check platform-specific project sounds first
+      system = platform.system().lower()
+      if system == 'darwin':
+          sound_files = ['notification.aiff', 'notification.wav', 'complete.wav']
+      else:
+          sound_files = ['notification.wav', 'notification.aiff', 'complete.wav']
+      
+      # Check in project .claude/sounds directory
+      for sound_file in sound_files:
+          project_sound = os.path.join('.claude', 'sounds', sound_file)
+          if os.path.exists(project_sound):
+              return project_sound
           
       # Check relative to hooks directory for embedded sounds
       script_dir = os.path.dirname(os.path.abspath(__file__))
-      embedded_sound = os.path.join(script_dir, '..', 'sounds', 'notification.aiff')
-      if os.path.exists(embedded_sound):
-          return embedded_sound
+      for sound_file in sound_files:
+          embedded_sound = os.path.join(script_dir, '..', 'sounds', sound_file)
+          if os.path.exists(embedded_sound):
+              return embedded_sound
       
-      # Fallback to system sound if embedded sound not found
-      system_sound = '/System/Library/Sounds/Glass.aiff'
-      if os.path.exists(system_sound):
+      # Fallback to platform-specific system sound
+      system_sound = get_platform_system_sound()
+      if system_sound and os.path.exists(system_sound):
           return system_sound
           
       return None
@@ -187,11 +222,24 @@ setup: |
                            stdout=subprocess.DEVNULL, 
                            stderr=subprocess.DEVNULL)
           elif system == 'linux':
-              # TODO: Add Linux system sound support
-              pass
+              # Try different Linux audio players
+              players = ['aplay', 'paplay', 'play']
+              for player in players:
+                  try:
+                      subprocess.run([player, sound_path], 
+                                   check=True,
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL)
+                      break
+                  except (subprocess.CalledProcessError, FileNotFoundError):
+                      continue
           elif system == 'windows':
-              # TODO: Add Windows system sound support
-              pass
+              # Use PowerShell with Media.SoundPlayer for Git Bash compatibility
+              ps_command = f"(New-Object Media.SoundPlayer '{sound_path}').PlaySync()"
+              subprocess.run(['powershell', '-c', ps_command], 
+                           check=False,
+                           stdout=subprocess.DEVNULL, 
+                           stderr=subprocess.DEVNULL)
           else:
               return False
           return True

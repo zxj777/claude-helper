@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/zxj777/claude-helper/internal/assets"
 	"github.com/zxj777/claude-helper/pkg/types"
 )
 
@@ -89,7 +90,7 @@ func (a *AudioHandler) getSoundFileForMessage(message NotificationMessage) strin
 	return "complete.wav"
 }
 
-// findSoundFile locates the sound file in various directories
+// findSoundFile locates the sound file in various directories with platform-aware fallbacks
 func (a *AudioHandler) findSoundFile(soundFile string) string {
 	// If absolute path, use as-is
 	if filepath.IsAbs(soundFile) {
@@ -113,6 +114,19 @@ func (a *AudioHandler) findSoundFile(soundFile string) string {
 		hooksSound := filepath.Join(wd, ".claude", "hooks", "..", "sounds", soundFile)
 		if _, err := os.Stat(hooksSound); err == nil {
 			return hooksSound
+		}
+	}
+
+	// Check embedded sounds using assets package
+	if embeddedSound, err := assets.GetSoundFilePath(soundFile); err == nil {
+		return embeddedSound
+	}
+
+	// If the specific sound file is not found and it's a notification sound,
+	// try platform-specific system sounds
+	if soundFile == "notification.aiff" || soundFile == "notification.wav" || soundFile == "complete.wav" {
+		if platformSound, err := assets.GetPlatformNotificationSoundWithFallback(); err == nil {
+			return platformSound
 		}
 	}
 

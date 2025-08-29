@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 //go:embed templates/*
@@ -208,4 +209,70 @@ func GetSoundFilePath(filename string) (string, error) {
 	}
 
 	return soundPath, nil
+}
+
+// GetPlatformNotificationSound returns the platform-appropriate system notification sound
+func GetPlatformNotificationSound() string {
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS: Use the classic Glass sound (compatible with existing AIFF-based logic)
+		return "/System/Library/Sounds/Glass.aiff"
+	case "windows":
+		// Windows: Use the classic Ding sound, which is pleasant and widely recognized
+		return "C:\\Windows\\Media\\Windows Ding.wav"
+	case "linux":
+		// Linux: Try common system notification sounds
+		// Check for common locations in order of preference
+		candidates := []string{
+			"/usr/share/sounds/alsa/Side_Left.wav",           // ALSA default
+			"/usr/share/sounds/ubuntu/notifications/Blip.ogg", // Ubuntu
+			"/usr/share/sounds/generic/notifications/complete.oga", // Generic
+			"/usr/share/sounds/freedesktop/stereo/complete.oga",    // Freedesktop
+		}
+		
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+		
+		// Fallback: return a generic path that most Linux systems can handle
+		return "/usr/share/sounds/alsa/Side_Left.wav"
+	default:
+		// For unknown platforms, return a generic filename
+		return "notification.wav"
+	}
+}
+
+// GetPlatformNotificationSoundWithFallback returns platform-appropriate notification sound with fallback logic
+func GetPlatformNotificationSoundWithFallback() (string, error) {
+	// First try platform-specific system sound
+	systemSound := GetPlatformNotificationSound()
+	if _, err := os.Stat(systemSound); err == nil {
+		return systemSound, nil
+	}
+
+	// If system sound not found, try project-specific sounds
+	projectSounds := []string{"notification.wav", "notification.aiff", "complete.wav"}
+	
+	// Check in project .claude/sounds directory
+	if wd, err := os.Getwd(); err == nil {
+		for _, sound := range projectSounds {
+			projectSound := filepath.Join(wd, ".claude", "sounds", sound)
+			if _, err := os.Stat(projectSound); err == nil {
+				return projectSound, nil
+			}
+		}
+	}
+
+	// Check embedded sounds
+	for _, sound := range projectSounds {
+		if soundPath, err := GetSoundFilePath(sound); err == nil {
+			return soundPath, nil
+		}
+	}
+
+	// Last resort: return system sound path even if it doesn't exist
+	// (the audio player will handle the error gracefully)
+	return systemSound, nil
 }

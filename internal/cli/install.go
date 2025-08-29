@@ -859,40 +859,61 @@ func copyAudioFiles() error {
 		return fmt.Errorf("failed to create sounds directory: %w", err)
 	}
 
-	// Copy the embedded notification sound file
-	targetPath := filepath.Join(soundsDir, "notification.aiff")
+	// Determine platform-appropriate notification sound
+	platformSound := assets.GetPlatformNotificationSound()
+	var targetFilename string
+	var targetPath string
+
+	// Use platform-appropriate filename
+	switch runtime.GOOS {
+	case "darwin":
+		targetFilename = "notification.aiff"
+	default:
+		targetFilename = "notification.wav"
+	}
+	
+	targetPath = filepath.Join(soundsDir, targetFilename)
+
 	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-		// Try to get the sound file from embedded assets
-		soundPath, err := assets.GetSoundFilePath("notification.aiff")
-		if err != nil {
-			// If embedded sound not available, copy from system
-			systemSoundPath := "/System/Library/Sounds/Glass.aiff"
-			if _, err := os.Stat(systemSoundPath); err == nil {
-				content, err := os.ReadFile(systemSoundPath)
+		// First try to get platform-appropriate sound from system
+		if _, err := os.Stat(platformSound); err == nil {
+			content, err := os.ReadFile(platformSound)
+			if err == nil {
+				if err := os.WriteFile(targetPath, content, 0644); err == nil {
+					fmt.Printf("Copied platform system sound to: %s\n", targetPath)
+					return nil
+				}
+			}
+		}
+
+		// Try to get from embedded assets (try both formats)
+		soundFormats := []string{targetFilename}
+		if targetFilename != "notification.aiff" {
+			soundFormats = append(soundFormats, "notification.aiff")
+		}
+		if targetFilename != "notification.wav" {
+			soundFormats = append(soundFormats, "notification.wav")
+		}
+
+		for _, format := range soundFormats {
+			if soundPath, err := assets.GetSoundFilePath(format); err == nil {
+				content, err := os.ReadFile(soundPath)
 				if err == nil {
 					if err := os.WriteFile(targetPath, content, 0644); err == nil {
-						fmt.Printf("Copied system sound to: %s\n", targetPath)
+						fmt.Printf("Copied embedded sound to: %s\n", targetPath)
 						return nil
 					}
 				}
 			}
-			// Create placeholder if all else fails
-			if err := os.WriteFile(targetPath, []byte("PLACEHOLDER - Replace with notification.aiff"), 0644); err != nil {
-				return fmt.Errorf("failed to create sound placeholder: %w", err)
-			}
-			fmt.Printf("Created sound placeholder at: %s\n", targetPath)
-			fmt.Println("📝 Note: Replace with actual notification.aiff file")
-		} else {
-			// Copy from embedded assets
-			content, err := os.ReadFile(soundPath)
-			if err != nil {
-				return fmt.Errorf("failed to read embedded sound file: %w", err)
-			}
-			if err := os.WriteFile(targetPath, content, 0644); err != nil {
-				return fmt.Errorf("failed to copy embedded sound file: %w", err)
-			}
-			fmt.Printf("Copied embedded sound to: %s\n", targetPath)
 		}
+
+		// Create informational placeholder if all else fails
+		placeholder := fmt.Sprintf("PLACEHOLDER - Cross-platform sound support enabled\nSystem sound: %s\nReplace this file with custom %s if desired", platformSound, targetFilename)
+		if err := os.WriteFile(targetPath, []byte(placeholder), 0644); err != nil {
+			return fmt.Errorf("failed to create sound placeholder: %w", err)
+		}
+		fmt.Printf("Created sound configuration info at: %s\n", targetPath)
+		fmt.Printf("📝 Platform system sound available: %s\n", platformSound)
 	} else {
 		fmt.Printf("Sound file already exists: %s\n", targetPath)
 	}

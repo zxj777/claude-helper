@@ -83,8 +83,34 @@ setup: |
       else:
           return config.get('error_sound', config.get('default_sound', 'complete.wav'))
   
+  def get_platform_system_sound():
+      """Get platform-appropriate system notification sound"""
+      system = platform.system().lower()
+      
+      if system == 'darwin':  # macOS
+          return '/System/Library/Sounds/Glass.aiff'
+      elif system == 'windows':  # Windows
+          return 'C:\\Windows\\Media\\Windows Ding.wav'
+      elif system == 'linux':  # Linux
+          # Try common Linux notification sounds
+          candidates = [
+              '/usr/share/sounds/alsa/Side_Left.wav',
+              '/usr/share/sounds/ubuntu/notifications/Blip.ogg',
+              '/usr/share/sounds/generic/notifications/complete.oga',
+              '/usr/share/sounds/freedesktop/stereo/complete.oga'
+          ]
+          
+          for candidate in candidates:
+              if os.path.exists(candidate):
+                  return candidate
+          
+          # Fallback
+          return '/usr/share/sounds/alsa/Side_Left.wav'
+      
+      return None
+
   def get_sound_path(sound_file):
-      """Get the full path to the sound file"""
+      """Get the full path to the sound file with platform-aware fallbacks"""
       # First check if it's an absolute path
       if os.path.isabs(sound_file):
           return sound_file
@@ -99,6 +125,13 @@ setup: |
       embedded_sound = os.path.join(script_dir, '..', 'sounds', sound_file)
       if os.path.exists(embedded_sound):
           return embedded_sound
+      
+      # If the specific sound file is not found and it's a notification sound,
+      # try platform-specific system sounds
+      if sound_file in ['notification.aiff', 'notification.wav', 'complete.wav']:
+          system_sound = get_platform_system_sound()
+          if system_sound and os.path.exists(system_sound):
+              return system_sound
           
       return None
   
