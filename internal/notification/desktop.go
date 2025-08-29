@@ -152,8 +152,8 @@ func (d *DesktopHandler) sendWindowsNotification(message NotificationMessage) er
 		$balloon.BalloonTipTitle = "%s"
 		$balloon.BalloonTipText = "%s"
 		$balloon.Visible = $true
-		$balloon.ShowBalloonTip(3000)
-		Start-Sleep -Seconds 1
+		$balloon.ShowBalloonTip(10000)
+		Start-Sleep -Seconds 5
 		$balloon.Dispose()
 	`, title, text)
 

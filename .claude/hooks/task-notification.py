@@ -144,8 +144,8 @@ def send_desktop_notification(title, message, message_type="info"):
                 $balloon.BalloonTipTitle = "{title}"
                 $balloon.BalloonTipText = "{message}"
                 $balloon.Visible = $true
-                $balloon.ShowBalloonTip(3000)
-                Start-Sleep -Seconds 1
+                $balloon.ShowBalloonTip(10000)
+                Start-Sleep -Seconds 5
                 $balloon.Dispose()
             """
             subprocess.run(['powershell', '-Command', ps_script], 
