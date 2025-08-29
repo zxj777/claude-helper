@@ -1,0 +1,17 @@
+{
+  "notification_types": [
+    "desktop"
+  ],
+  "cooldown_seconds": 2,
+  "desktop": {
+    "enabled": true,
+    "show_details": false
+  },
+  "audio": {
+    "enabled": false,
+    "success_sound": "success.wav",
+    "error_sound": "error.wav",
+    "default_sound": "complete.wav",
+    "volume": 70
+  }
+}

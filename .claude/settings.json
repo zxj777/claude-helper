@@ -1,11 +1,11 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
+    "Stop": [
       {
         "hooks": [
           {
-            "command": "bash .claude/hooks/run-python.sh .claude/hooks/text-expander.py",
-            "timeout": 10,
+            "command": "bash .claude/hooks/run-python.sh .claude/hooks/task-notification.py",
+            "timeout": 5,
             "type": "command"
           }
         ],

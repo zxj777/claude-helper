@@ -114,6 +114,127 @@ func removeAgent(name string) error {
 }
 
 func removeHook(name string) error {
-	return config.RemoveHookFromSettings(name)
+	// Remove hook from Claude settings first
+	if err := config.RemoveHookFromSettings(name); err != nil {
+		return fmt.Errorf("failed to remove hook from settings: %w", err)
+	}
+
+	// Remove hook-related files
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Remove hook script files
+	hooksDir := filepath.Join(wd, ".claude", "hooks")
+	scriptExtensions := []string{".py", ".sh", ".js", ".ts"}
+	for _, ext := range scriptExtensions {
+		scriptPath := filepath.Join(hooksDir, name+ext)
+		if _, err := os.Stat(scriptPath); err == nil {
+			if err := os.Remove(scriptPath); err != nil {
+				fmt.Printf("Warning: failed to remove hook script %s: %v\n", scriptPath, err)
+			} else {
+				fmt.Printf("Removed hook script: %s\n", scriptPath)
+			}
+		}
+	}
+
+	// Remove hook-specific config files
+	configDir := filepath.Join(wd, ".claude", "config")
+	configFiles := []string{
+		name + ".json",
+		name + "-config.json",
+	}
+	
+	// Special handling for known hooks
+	switch name {
+	case "audio-notification":
+		configFiles = append(configFiles, "audio-notification.json")
+	case "task-notification":
+		configFiles = append(configFiles, "notification.json")
+	case "text-expander":
+		configFiles = append(configFiles, "text-expander.json")
+	}
+
+	for _, configFile := range configFiles {
+		configPath := filepath.Join(configDir, configFile)
+		if _, err := os.Stat(configPath); err == nil {
+			if err := os.Remove(configPath); err != nil {
+				fmt.Printf("Warning: failed to remove config file %s: %v\n", configPath, err)
+			} else {
+				fmt.Printf("Removed config file: %s\n", configPath)
+			}
+		}
+	}
+
+	// Remove sound files for audio-related hooks
+	if name == "audio-notification" || name == "task-notification" {
+		soundsDir := filepath.Join(wd, ".claude", "sounds")
+		if _, err := os.Stat(soundsDir); err == nil {
+			// Ask user if they want to remove sound files
+			fmt.Print("Do you want to remove audio files? (y/N): ")
+			reader := bufio.NewReader(os.Stdin)
+			response, err := reader.ReadString('\n')
+			if err == nil {
+				response = strings.ToLower(strings.TrimSpace(response))
+				if response == "y" || response == "yes" {
+					if err := os.RemoveAll(soundsDir); err != nil {
+						fmt.Printf("Warning: failed to remove sounds directory: %v\n", err)
+					} else {
+						fmt.Printf("Removed sounds directory: %s\n", soundsDir)
+					}
+				}
+			}
+		}
+	}
+
+	// Remove any temporary or state files
+	tempFiles := []string{
+		".claude/last-notification-time",
+		".claude/last-audio-notification",
+		".claude/hook-error.log",
+		".claude/notification-error.log",
+	}
+
+	for _, tempFile := range tempFiles {
+		tempPath := filepath.Join(wd, tempFile)
+		if _, err := os.Stat(tempPath); err == nil {
+			if err := os.Remove(tempPath); err != nil {
+				fmt.Printf("Warning: failed to remove temp file %s: %v\n", tempPath, err)
+			} else {
+				fmt.Printf("Removed temp file: %s\n", tempPath)
+			}
+		}
+	}
+
+	// Clean up empty directories
+	cleanupEmptyDirectories(wd, name)
+
+	return nil
+}
+
+func cleanupEmptyDirectories(wd, hookName string) {
+	// Check and remove empty directories
+	dirsToCheck := []string{
+		filepath.Join(wd, ".claude", "hooks"),
+		filepath.Join(wd, ".claude", "config"),
+		filepath.Join(wd, ".claude", "sounds"),
+	}
+
+	for _, dir := range dirsToCheck {
+		if isEmpty, err := isDirEmpty(dir); err == nil && isEmpty {
+			// Don't remove the directory itself as other components might need it
+			// Just leave it empty for now
+			fmt.Printf("Directory %s is now empty (keeping for other components)\n", dir)
+		}
+	}
+}
+
+func isDirEmpty(dir string) (bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 0, nil
 }
 

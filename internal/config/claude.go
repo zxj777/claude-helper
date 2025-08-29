@@ -334,7 +334,199 @@ func writeSettingsFile(path string, settings *ClaudeSettings) error {
 }
 
 func containsHookName(command, hookName string) bool {
-	// Simple check - this could be more sophisticated
-	// For now, just check if the hook name appears in the command
-	return command != "" && hookName != ""
+	// Check if the command contains the hook name
+	// This could be more sophisticated, but for now we check if the hook script name appears in the command
+	if command == "" || hookName == "" {
+		return false
+	}
+	
+	// Check if the hook name appears in the command (as script name)
+	return strings.Contains(command, hookName+".py") || 
+		   strings.Contains(command, hookName+".sh") ||
+		   strings.Contains(command, hookName+".js") ||
+		   strings.Contains(command, "/"+hookName) ||
+		   strings.Contains(command, "\\"+hookName)
+}
+
+// GetNotificationConfigPath returns the path to the notification config file
+func GetNotificationConfigPath() (string, error) {
+	// Use project-local config directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+	return filepath.Join(wd, ".claude", "config", "notification.json"), nil
+}
+
+// GetAudioConfigPath returns the path to the legacy audio notification config file
+// Kept for backward compatibility
+func GetAudioConfigPath() (string, error) {
+	// Use project-local config directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+	return filepath.Join(wd, ".claude", "config", "audio-notification.json"), nil
+}
+
+// IsNotificationInstalled checks if notification is configured
+func IsNotificationInstalled() (bool, error) {
+	configPath, err := GetNotificationConfigPath()
+	if err != nil {
+		return false, err
+	}
+
+	_, err = os.Stat(configPath)
+	if os.IsNotExist(err) {
+		// Check for legacy audio config
+		return IsAudioNotificationInstalled()
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check notification config file: %w", err)
+	}
+
+	return true, nil
+}
+
+// IsAudioNotificationInstalled checks if legacy audio notification is configured
+func IsAudioNotificationInstalled() (bool, error) {
+	configPath, err := GetAudioConfigPath()
+	if err != nil {
+		return false, err
+	}
+
+	_, err = os.Stat(configPath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to check audio config file: %w", err)
+	}
+
+	return true, nil
+}
+
+// LoadNotificationConfig loads the notification configuration
+func LoadNotificationConfig() (*types.NotificationConfig, error) {
+	configPath, err := GetNotificationConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(configPath)
+	if os.IsNotExist(err) {
+		// Try to migrate from legacy audio config
+		return MigrateLegacyAudioConfig()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read notification config: %w", err)
+	}
+
+	var config types.NotificationConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse notification config: %w", err)
+	}
+
+	return &config, nil
+}
+
+// LoadAudioConfig loads the legacy audio notification configuration
+func LoadAudioConfig() (*types.AudioConfig, error) {
+	configPath, err := GetAudioConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(configPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("audio notification not configured")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read audio config: %w", err)
+	}
+
+	var config types.AudioConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse audio config: %w", err)
+	}
+
+	return &config, nil
+}
+
+// SaveNotificationConfig saves the notification configuration
+func SaveNotificationConfig(config *types.NotificationConfig) error {
+	configPath, err := GetNotificationConfigPath()
+	if err != nil {
+		return err
+	}
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Marshal config to JSON with proper formatting
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification config: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write notification config file: %w", err)
+	}
+
+	return nil
+}
+
+// SaveAudioConfig saves the legacy audio notification configuration
+func SaveAudioConfig(config *types.AudioConfig) error {
+	configPath, err := GetAudioConfigPath()
+	if err != nil {
+		return err
+	}
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Marshal config to JSON with proper formatting
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal audio config: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write audio config file: %w", err)
+	}
+
+	return nil
+}
+
+// MigrateLegacyAudioConfig migrates old audio config to new notification config
+func MigrateLegacyAudioConfig() (*types.NotificationConfig, error) {
+	audioConfig, err := LoadAudioConfig()
+	if err != nil {
+		return nil, fmt.Errorf("no notification configuration found")
+	}
+
+	// Create new notification config from legacy audio config
+	notificationConfig := &types.NotificationConfig{
+		NotificationTypes: []string{"audio"}, // Default to audio only for migration
+		CooldownSecs:      2,                 // Default cooldown
+		Desktop: types.DesktopConfig{
+			Enabled:     false, // Disabled by default for migration
+			ShowDetails: true,
+		},
+		Audio: *audioConfig,
+	}
+
+	// Save the migrated config
+	if err := SaveNotificationConfig(notificationConfig); err != nil {
+		return nil, fmt.Errorf("failed to save migrated config: %w", err)
+	}
+
+	return notificationConfig, nil
 }
