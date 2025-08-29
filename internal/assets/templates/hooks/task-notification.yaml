@@ -47,7 +47,7 @@ setup: |
           # Convert to new format
           new_config = {
               "notification_types": ["audio"] if legacy_config.get("enabled", True) else [],
-              "cooldown_seconds": legacy_config.get("cooldown_seconds", 2),
+              "cooldown_seconds": legacy_config.get("cooldown_seconds", 5),
               "desktop": {
                   "enabled": False,
                   "show_details": True
@@ -136,8 +136,8 @@ setup: |
                   $balloon.BalloonTipTitle = "{title}"
                   $balloon.BalloonTipText = "{message}"
                   $balloon.Visible = $true
-                  $balloon.ShowBalloonTip(3000)
-                  Start-Sleep -Seconds 1
+                  $balloon.ShowBalloonTip(10000)
+                  Start-Sleep -Seconds 5
                   $balloon.Dispose()
               '''
               subprocess.run(['powershell', '-Command', ps_script], 
