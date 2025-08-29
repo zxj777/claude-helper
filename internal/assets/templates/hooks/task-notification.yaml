@@ -148,30 +148,23 @@ setup: |
       except Exception as e:
           return False
   
-  def get_sound_file(config, success):
-      """Get appropriate sound file based on result"""
-      audio_config = config.get('audio', {})
-      
-      if success:
-          return audio_config.get('success_sound', audio_config.get('default_sound', 'complete.wav'))
-      else:
-          return audio_config.get('error_sound', audio_config.get('default_sound', 'complete.wav'))
-  
-  def get_sound_path(sound_file):
-      """Get the full path to the sound file"""
-      if os.path.isabs(sound_file):
-          return sound_file if os.path.exists(sound_file) else None
-          
-      # Check in project .claude/sounds directory
-      project_sound = os.path.join('.claude', 'sounds', sound_file)
+  def get_sound_path():
+      """Get the path to the embedded notification sound"""
+      # Check in project .claude/sounds directory first
+      project_sound = os.path.join('.claude', 'sounds', 'notification.aiff')
       if os.path.exists(project_sound):
           return project_sound
           
-      # Check relative to hooks directory
+      # Check relative to hooks directory for embedded sounds
       script_dir = os.path.dirname(os.path.abspath(__file__))
-      embedded_sound = os.path.join(script_dir, '..', 'sounds', sound_file)
+      embedded_sound = os.path.join(script_dir, '..', 'sounds', 'notification.aiff')
       if os.path.exists(embedded_sound):
           return embedded_sound
+      
+      # Fallback to system sound if embedded sound not found
+      system_sound = '/System/Library/Sounds/Glass.aiff'
+      if os.path.exists(system_sound):
+          return system_sound
           
       return None
   
@@ -181,9 +174,7 @@ setup: |
       if not audio_config.get('enabled', False):
           return False
       
-      sound_file = get_sound_file(config, success)
-      sound_path = get_sound_path(sound_file)
-      
+      sound_path = get_sound_path()
       if not sound_path:
           return False
       
@@ -196,23 +187,13 @@ setup: |
                            stdout=subprocess.DEVNULL, 
                            stderr=subprocess.DEVNULL)
           elif system == 'linux':
-              # Try different audio players
-              players = ['aplay', 'paplay', 'play']
-              for player in players:
-                  try:
-                      subprocess.run([player, sound_path], 
-                                   check=True,
-                                   stdout=subprocess.DEVNULL, 
-                                   stderr=subprocess.DEVNULL)
-                      break
-                  except (subprocess.CalledProcessError, FileNotFoundError):
-                      continue
-          else:  # Windows
-              ps_script = f'$sound = New-Object Media.SoundPlayer "{sound_path}"; $sound.PlaySync()'
-              subprocess.run(['powershell', '-Command', ps_script], 
-                           check=False,
-                           stdout=subprocess.DEVNULL, 
-                           stderr=subprocess.DEVNULL)
+              # TODO: Add Linux system sound support
+              pass
+          elif system == 'windows':
+              # TODO: Add Windows system sound support
+              pass
+          else:
+              return False
           return True
       except Exception as e:
           return False

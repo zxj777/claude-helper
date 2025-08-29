@@ -11,6 +11,9 @@ import (
 //go:embed templates/*
 var templatesFS embed.FS
 
+//go:embed sounds/*
+var soundsFS embed.FS
+
 // GetTemplatesDir returns the path to the templates directory
 // If running from source (development), it uses the local internal/assets/templates
 // If running from built binary, it extracts embedded files to a temp location
@@ -135,4 +138,74 @@ func GetTemplatePath(templateType, name string) (string, error) {
 	}
 
 	return templatePath, nil
+}
+
+// GetSoundsDir returns the path to the sounds directory
+// If running from source (development), it uses the local internal/assets/sounds
+// If running from built binary, it extracts embedded sounds to a temp location
+func GetSoundsDir() (string, error) {
+	// First try to find local sounds directory (for development)
+	if wd, err := os.Getwd(); err == nil {
+		localSoundsDir := filepath.Join(wd, "internal", "assets", "sounds")
+		if _, err := os.Stat(localSoundsDir); err == nil {
+			return localSoundsDir, nil
+		}
+	}
+
+	// If not found locally, extract embedded files to temp directory
+	tempDir, err := os.MkdirTemp("", "claude-helper-sounds-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	// Extract embedded sounds to temp directory
+	err = fs.WalkDir(soundsFS, "sounds", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Create the target path in temp directory
+		targetPath := filepath.Join(tempDir, path)
+
+		if d.IsDir() {
+			return os.MkdirAll(targetPath, 0755)
+		}
+
+		// Read file content from embedded FS
+		content, err := soundsFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		// Create parent directory if it doesn't exist
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return err
+		}
+
+		// Write file to temp location
+		return os.WriteFile(targetPath, content, 0644)
+	})
+
+	if err != nil {
+		os.RemoveAll(tempDir) // Clean up on error
+		return "", fmt.Errorf("failed to extract embedded sounds: %w", err)
+	}
+
+	return filepath.Join(tempDir, "sounds"), nil
+}
+
+// GetSoundFilePath returns the full path to a sound file
+func GetSoundFilePath(filename string) (string, error) {
+	soundsDir, err := GetSoundsDir()
+	if err != nil {
+		return "", err
+	}
+
+	soundPath := filepath.Join(soundsDir, filename)
+	
+	if _, err := os.Stat(soundPath); err != nil {
+		return "", fmt.Errorf("sound file not found: %s", soundPath)
+	}
+
+	return soundPath, nil
 }

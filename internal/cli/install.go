@@ -132,12 +132,6 @@ func installHook(name, templatePath string, force bool) error {
 		}
 	}
 
-	// Special handling for audio-notification hook - configure audio settings before setup  
-	if name == "audio-notification" {
-		if err := configureAudioNotificationSettings(); err != nil {
-			return fmt.Errorf("failed to configure audio notification: %w", err)
-		}
-	}
 
 	// Special handling for task-notification hook - configure notification settings before setup
 	if name == "task-notification" {
@@ -159,7 +153,7 @@ func installHook(name, templatePath string, force bool) error {
 	}
 
 	// Execute setup script if present (skip for hooks we handle with Go code)
-	skipSetupHooks := []string{"text-expander", "audio-notification", "task-notification"}
+	skipSetupHooks := []string{"text-expander", "task-notification"}
 	shouldSkip := false
 	for _, skipHook := range skipSetupHooks {
 		if name == skipHook {
@@ -197,18 +191,6 @@ func installHook(name, templatePath string, force bool) error {
 		}
 	}
 
-	// Special handling for audio-notification - create Python script and config file
-	if name == "audio-notification" {
-		if err := createAudioNotificationPythonScript(); err != nil {
-			return fmt.Errorf("failed to create audio-notification Python script: %w", err)
-		}
-		if err := createAudioNotificationConfig(); err != nil {
-			return fmt.Errorf("failed to create audio-notification config: %w", err)
-		}
-		if err := copyAudioFiles(); err != nil {
-			return fmt.Errorf("failed to copy audio files: %w", err)
-		}
-	}
 
 	// Special handling for task-notification - create Python script and config file
 	if name == "task-notification" {
@@ -862,355 +844,8 @@ Write-Host "Text expander hook installed successfully!"
 `
 }
 
-// configureAudioNotificationSettings handles interactive audio notification configuration
-func configureAudioNotificationSettings() error {
-	fmt.Println("🔊 Configuring Audio Notification Settings...")
-	fmt.Println("Choose when to play notification sounds after Claude completes tasks.")
-	fmt.Println()
 
-	// Check if config already exists
-	configPath, err := getAudioNotificationConfigPath()
-	if err != nil {
-		return fmt.Errorf("failed to get config path: %w", err)
-	}
 
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("🔧 Audio notification config already exists, skipping interactive configuration")
-		return nil
-	}
-
-	// Create default audio config
-	audioConfig := &types.AudioConfig{
-		Enabled:      true,
-		SuccessSound: "success.wav",
-		ErrorSound:   "error.wav", 
-		DefaultSound: "complete.wav",
-		Volume:       70,
-	}
-
-	// Interactive sound selection
-	fmt.Println("Available notification sounds:")
-	fmt.Println("1. success.wav    - 成功铃声 (愉悦的成功提示)")
-	fmt.Println("2. complete.wav   - 完成提示 (中性的任务完成)")
-	fmt.Println("3. subtle.wav     - 轻柔提醒 (不打扰工作)")
-	fmt.Println("4. chime.wav      - 清脆铃声 (清脆悦耳)")
-	fmt.Println("5. bell.wav       - 传统铃声 (经典铃铛声)")
-	fmt.Println("6. attention.wav  - 注意提醒 (明显的提醒音)")
-	fmt.Println("7. 禁用音频通知")
-	fmt.Println()
-
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Print("请选择默认提示音 (1-7): ")
-		choice, err := reader.ReadString('\n')
-		if err != nil {
-			// If we can't read input, use default settings
-			fmt.Println("\n无法读取输入，使用默认配置")
-			break
-		}
-		
-		choice = strings.TrimSpace(choice)
-		switch choice {
-		case "1":
-			audioConfig.DefaultSound = "success.wav"
-			fmt.Println("✅ 选择了成功铃声作为默认提示音")
-		case "2":
-			audioConfig.DefaultSound = "complete.wav"
-			fmt.Println("✅ 选择了完成提示作为默认提示音")
-		case "3":
-			audioConfig.DefaultSound = "subtle.wav"
-			fmt.Println("✅ 选择了轻柔提醒作为默认提示音")
-		case "4":
-			audioConfig.DefaultSound = "chime.wav"
-			fmt.Println("✅ 选择了清脆铃声作为默认提示音")
-		case "5":
-			audioConfig.DefaultSound = "bell.wav"
-			fmt.Println("✅ 选择了传统铃声作为默认提示音")
-		case "6":
-			audioConfig.DefaultSound = "attention.wav"
-			fmt.Println("✅ 选择了注意提醒作为默认提示音")
-		case "7":
-			audioConfig.Enabled = false
-			fmt.Println("✅ 禁用了音频通知")
-		default:
-			fmt.Println("❌ 无效选择，请输入 1-7")
-			continue
-		}
-		break
-	}
-
-	// Volume setting  
-	fmt.Print("设置音量 (1-100，默认70): ")
-	volumeStr, err := reader.ReadString('\n')
-	if err == nil {
-		volumeStr = strings.TrimSpace(volumeStr)
-		if volumeStr != "" {
-			if volume := parseVolume(volumeStr); volume > 0 {
-				audioConfig.Volume = volume
-				fmt.Printf("✅ 音量设置为: %d\n", volume)
-			}
-		}
-	}
-
-	// Save config
-	if err := saveAudioNotificationConfig(configPath, audioConfig); err != nil {
-		return fmt.Errorf("failed to save audio config: %w", err)
-	}
-
-	fmt.Printf("📝 音频通知配置已保存到: %s\n", configPath)
-	return nil
-}
-
-func parseVolume(volumeStr string) int {
-	var volume int
-	if _, err := fmt.Sscanf(volumeStr, "%d", &volume); err == nil && volume >= 1 && volume <= 100 {
-		return volume
-	}
-	return 0
-}
-
-func getAudioNotificationConfigPath() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to get working directory: %w", err)
-	}
-	return filepath.Join(wd, ".claude", "config", "audio-notification.json"), nil
-}
-
-func saveAudioNotificationConfig(configPath string, audioConfig *types.AudioConfig) error {
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	// Use JSON encoder with proper formatting
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-
-	if err := encoder.Encode(audioConfig); err != nil {
-		return fmt.Errorf("failed to encode audio config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, buf.Bytes(), 0644); err != nil {
-		return fmt.Errorf("failed to write audio config file: %w", err)
-	}
-
-	return nil
-}
-
-func createAudioNotificationPythonScript() error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
-	}
-
-	hooksDir := filepath.Join(wd, ".claude", "hooks")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("failed to create hooks directory: %w", err)
-	}
-
-	pythonScriptPath := filepath.Join(hooksDir, "audio-notification.py")
-
-	// Python script content from the YAML template
-	pythonContent := `#!/usr/bin/env python3
-import json
-import sys
-import os
-import subprocess
-import time
-import platform
-
-def get_audio_config():
-    """Load audio configuration from config file"""
-    config_file = '.claude/config/audio-notification.json'
-    if not os.path.exists(config_file):
-        return None
-        
-    try:
-        with open(config_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        return None
-
-def should_play_notification(config):
-    """Check if we should play a notification based on cooldown"""
-    if not config.get('enabled', True):
-        return False
-        
-    cooldown = config.get('cooldown_seconds', 2)
-    if cooldown <= 0:
-        return True
-        
-    # Check last notification time
-    last_file = '.claude/last-audio-notification'
-    if os.path.exists(last_file):
-        try:
-            with open(last_file, 'r') as f:
-                last_time = float(f.read().strip())
-            if time.time() - last_time < cooldown:
-                return False
-        except:
-            pass
-            
-    # Update last notification time
-    try:
-        with open(last_file, 'w') as f:
-            f.write(str(time.time()))
-    except:
-        pass
-        
-    return True
-
-def get_sound_file(config, tool_result):
-    """Determine which sound file to play based on tool result"""
-    # Try to determine if operation was successful
-    success = True
-    try:
-        # Check for common error indicators
-        if 'error' in str(tool_result).lower():
-            success = False
-        elif 'failed' in str(tool_result).lower():
-            success = False
-        elif 'exception' in str(tool_result).lower():
-            success = False
-    except:
-        pass
-    
-    if success:
-        return config.get('success_sound', config.get('default_sound', 'complete.wav'))
-    else:
-        return config.get('error_sound', config.get('default_sound', 'complete.wav'))
-
-def get_sound_path(sound_file):
-    """Get the full path to the sound file"""
-    # First check if it's an absolute path
-    if os.path.isabs(sound_file):
-        return sound_file
-        
-    # Check in project .claude/sounds directory
-    project_sound = os.path.join('.claude', 'sounds', sound_file)
-    if os.path.exists(project_sound):
-        return project_sound
-        
-    # Check in embedded sounds directory (relative to hook script)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    embedded_sound = os.path.join(script_dir, '..', 'sounds', sound_file)
-    if os.path.exists(embedded_sound):
-        return embedded_sound
-        
-    return None
-
-def play_audio_file(sound_path, volume=70):
-    """Play audio file using platform-appropriate command"""
-    if not sound_path or not os.path.exists(sound_path):
-        return False
-        
-    try:
-        system = platform.system().lower()
-        
-        if system == 'darwin':  # macOS
-            subprocess.run(['afplay', sound_path], 
-                         check=False, 
-                         stdout=subprocess.DEVNULL, 
-                         stderr=subprocess.DEVNULL)
-        elif system == 'linux':
-            # Try different Linux audio players
-            players = ['aplay', 'paplay', 'play']
-            for player in players:
-                try:
-                    subprocess.run([player, sound_path], 
-                                 check=True,
-                                 stdout=subprocess.DEVNULL, 
-                                 stderr=subprocess.DEVNULL)
-                    break
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    continue
-        else:  # Windows (assume Git Bash environment)
-            # Use PowerShell to play sound
-            ps_command = f"(New-Object Media.SoundPlayer '{sound_path}').PlaySync()"
-            subprocess.run(['powershell', '-c', ps_command], 
-                         check=False,
-                         stdout=subprocess.DEVNULL, 
-                         stderr=subprocess.DEVNULL)
-        return True
-    except Exception as e:
-        return False
-
-def main():
-    try:
-        # Load configuration
-        config = get_audio_config()
-        if not config:
-            sys.exit(0)  # No config, exit silently
-            
-        # Check if notifications should be played
-        if not should_play_notification(config):
-            sys.exit(0)
-            
-        # Read tool use data from stdin
-        try:
-            input_data = json.load(sys.stdin)
-        except:
-            sys.exit(0)
-            
-        # Determine appropriate sound
-        sound_file = get_sound_file(config, input_data)
-        sound_path = get_sound_path(sound_file)
-        
-        if sound_path:
-            volume = config.get('volume', 70)
-            play_audio_file(sound_path, volume)
-            
-    except Exception as e:
-        # On any error, fail silently
-        pass
-    
-    sys.exit(0)
-
-if __name__ == '__main__':
-    main()
-`
-
-	if err := os.WriteFile(pythonScriptPath, []byte(pythonContent), 0755); err != nil {
-		return fmt.Errorf("failed to write Python script: %w", err)
-	}
-
-	fmt.Printf("Audio notification Python script created at: %s\n", pythonScriptPath)
-	return nil
-}
-
-func createAudioNotificationConfig() error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
-	}
-
-	configDir := filepath.Join(wd, ".claude", "config")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	configPath := filepath.Join(configDir, "audio-notification.json")
-
-	// Check if config already exists - don't overwrite user's configuration
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("Audio notification config already exists, skipping default config creation")
-		return nil
-	}
-
-	// Create default config (this shouldn't happen if configureAudioNotificationSettings ran first)
-	config := &types.AudioConfig{
-		Enabled:      true,
-		SuccessSound: "success.wav",
-		ErrorSound:   "error.wav",
-		DefaultSound: "complete.wav",
-		Volume:       70,
-	}
-
-	return saveAudioNotificationConfig(configPath, config)
-}
 
 func copyAudioFiles() error {
 	wd, err := os.Getwd()
@@ -1224,26 +859,43 @@ func copyAudioFiles() error {
 		return fmt.Errorf("failed to create sounds directory: %w", err)
 	}
 
-	// Get the source sounds directory from embedded assets
-	// For now, just create a placeholder since we can't embed actual audio files
-	soundFiles := []string{
-		"success.wav", "error.wav", "complete.wav", 
-		"attention.wav", "subtle.wav", "chime.wav", "bell.wav",
-	}
-
-	for _, soundFile := range soundFiles {
-		targetPath := filepath.Join(soundsDir, soundFile)
-		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
-			// Create empty placeholder files for now
-			// In production, these would be actual audio files
-			if err := os.WriteFile(targetPath, []byte(""), 0644); err != nil {
-				return fmt.Errorf("failed to create sound file %s: %w", soundFile, err)
+	// Copy the embedded notification sound file
+	targetPath := filepath.Join(soundsDir, "notification.aiff")
+	if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		// Try to get the sound file from embedded assets
+		soundPath, err := assets.GetSoundFilePath("notification.aiff")
+		if err != nil {
+			// If embedded sound not available, copy from system
+			systemSoundPath := "/System/Library/Sounds/Glass.aiff"
+			if _, err := os.Stat(systemSoundPath); err == nil {
+				content, err := os.ReadFile(systemSoundPath)
+				if err == nil {
+					if err := os.WriteFile(targetPath, content, 0644); err == nil {
+						fmt.Printf("Copied system sound to: %s\n", targetPath)
+						return nil
+					}
+				}
 			}
+			// Create placeholder if all else fails
+			if err := os.WriteFile(targetPath, []byte("PLACEHOLDER - Replace with notification.aiff"), 0644); err != nil {
+				return fmt.Errorf("failed to create sound placeholder: %w", err)
+			}
+			fmt.Printf("Created sound placeholder at: %s\n", targetPath)
+			fmt.Println("📝 Note: Replace with actual notification.aiff file")
+		} else {
+			// Copy from embedded assets
+			content, err := os.ReadFile(soundPath)
+			if err != nil {
+				return fmt.Errorf("failed to read embedded sound file: %w", err)
+			}
+			if err := os.WriteFile(targetPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to copy embedded sound file: %w", err)
+			}
+			fmt.Printf("Copied embedded sound to: %s\n", targetPath)
 		}
+	} else {
+		fmt.Printf("Sound file already exists: %s\n", targetPath)
 	}
-
-	fmt.Printf("Audio files copied to: %s\n", soundsDir)
-	fmt.Println("📝 Note: Run 'python3 generate-sounds.py' in the project root to generate actual audio files")
 	
 	return nil
 }
@@ -1271,14 +923,10 @@ func configureTaskNotificationSettings() error {
 		CooldownSecs:      2,
 		Desktop: types.DesktopConfig{
 			Enabled:     true,
-			ShowDetails: true,
+			ShowDetails: false, // Keep desktop notifications simple
 		},
 		Audio: types.AudioConfig{
-			Enabled:      false,
-			SuccessSound: "success.wav",
-			ErrorSound:   "error.wav",
-			DefaultSound: "complete.wav",
-			Volume:       70,
+			Enabled: false,
 		},
 	}
 
@@ -1311,20 +959,12 @@ func configureTaskNotificationSettings() error {
 			notificationConfig.NotificationTypes = []string{"audio"}
 			notificationConfig.Desktop.Enabled = false
 			notificationConfig.Audio.Enabled = true
-			fmt.Println("✅ 选择了音频通知")
-			// Ask for audio settings
-			if err := configureAudioSettings(&notificationConfig.Audio, reader); err != nil {
-				return fmt.Errorf("failed to configure audio settings: %w", err)
-			}
+			fmt.Println("✅ 选择了音频通知 (使用系统默认提示音)")
 		case "3":
 			notificationConfig.NotificationTypes = []string{"desktop", "audio"}
 			notificationConfig.Desktop.Enabled = true
 			notificationConfig.Audio.Enabled = true
 			fmt.Println("✅ 选择了桌面通知 + 音频通知")
-			// Ask for audio settings
-			if err := configureAudioSettings(&notificationConfig.Audio, reader); err != nil {
-				return fmt.Errorf("failed to configure audio settings: %w", err)
-			}
 		case "4":
 			notificationConfig.NotificationTypes = []string{}
 			notificationConfig.Desktop.Enabled = false
@@ -1337,20 +977,6 @@ func configureTaskNotificationSettings() error {
 		break
 	}
 
-	// Desktop notification details setting
-	if notificationConfig.Desktop.Enabled {
-		fmt.Print("显示详细信息? (Y/n): ")
-		detailChoice, err := reader.ReadString('\n')
-		if err == nil {
-			detailChoice = strings.TrimSpace(strings.ToLower(detailChoice))
-			if detailChoice == "n" || detailChoice == "no" {
-				notificationConfig.Desktop.ShowDetails = false
-				fmt.Println("✅ 禁用详细信息显示")
-			} else {
-				fmt.Println("✅ 启用详细信息显示")
-			}
-		}
-	}
 
 	// Save config
 	if err := saveTaskNotificationConfig(configPath, notificationConfig); err != nil {
@@ -1361,47 +987,6 @@ func configureTaskNotificationSettings() error {
 	return nil
 }
 
-func configureAudioSettings(audioConfig *types.AudioConfig, reader *bufio.Reader) error {
-	fmt.Println("\n音频设置:")
-	fmt.Println("1. success.wav    - 成功铃声")
-	fmt.Println("2. complete.wav   - 完成提示") 
-	fmt.Println("3. subtle.wav     - 轻柔提醒")
-	fmt.Println("4. chime.wav      - 清脆铃声")
-	fmt.Println("5. bell.wav       - 传统铃声")
-
-	fmt.Print("选择默认提示音 (1-5): ")
-	soundChoice, err := reader.ReadString('\n')
-	if err == nil {
-		soundChoice = strings.TrimSpace(soundChoice)
-		switch soundChoice {
-		case "1":
-			audioConfig.DefaultSound = "success.wav"
-		case "2":
-			audioConfig.DefaultSound = "complete.wav"
-		case "3":
-			audioConfig.DefaultSound = "subtle.wav"
-		case "4":
-			audioConfig.DefaultSound = "chime.wav"
-		case "5":
-			audioConfig.DefaultSound = "bell.wav"
-		}
-		fmt.Printf("✅ 选择了 %s 作为默认提示音\n", audioConfig.DefaultSound)
-	}
-
-	fmt.Print("设置音量 (1-100，默认70): ")
-	volumeStr, err := reader.ReadString('\n')
-	if err == nil {
-		volumeStr = strings.TrimSpace(volumeStr)
-		if volumeStr != "" {
-			if volume := parseVolume(volumeStr); volume > 0 {
-				audioConfig.Volume = volume
-				fmt.Printf("✅ 音量设置为: %d\n", volume)
-			}
-		}
-	}
-
-	return nil
-}
 
 func getTaskNotificationConfigPath() (string, error) {
 	wd, err := os.Getwd()
@@ -1606,30 +1191,23 @@ def send_desktop_notification(title, message, message_type="info"):
     except Exception as e:
         return False
 
-def get_sound_file(config, success):
-    """Get appropriate sound file based on result"""
-    audio_config = config.get('audio', {})
-    
-    if success:
-        return audio_config.get('success_sound', audio_config.get('default_sound', 'complete.wav'))
-    else:
-        return audio_config.get('error_sound', audio_config.get('default_sound', 'complete.wav'))
-
-def get_sound_path(sound_file):
-    """Get the full path to the sound file"""
-    if os.path.isabs(sound_file):
-        return sound_file if os.path.exists(sound_file) else None
-        
-    # Check in project .claude/sounds directory
-    project_sound = os.path.join('.claude', 'sounds', sound_file)
+def get_notification_sound_path():
+    """Get the path to the notification sound file"""
+    # Check in project .claude/sounds directory first
+    project_sound = os.path.join('.claude', 'sounds', 'notification.aiff')
     if os.path.exists(project_sound):
         return project_sound
         
-    # Check relative to hooks directory
+    # Check relative to hooks directory for embedded sounds
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    embedded_sound = os.path.join(script_dir, '..', 'sounds', sound_file)
+    embedded_sound = os.path.join(script_dir, '..', 'sounds', 'notification.aiff')
     if os.path.exists(embedded_sound):
         return embedded_sound
+    
+    # Fallback to system sound if embedded sound not found
+    system_sound = '/System/Library/Sounds/Glass.aiff'
+    if os.path.exists(system_sound):
+        return system_sound
         
     return None
 
@@ -1639,9 +1217,7 @@ def send_audio_notification(config, success):
     if not audio_config.get('enabled', False):
         return False
     
-    sound_file = get_sound_file(config, success)
-    sound_path = get_sound_path(sound_file)
-    
+    sound_path = get_notification_sound_path()
     if not sound_path:
         return False
     
@@ -1654,23 +1230,13 @@ def send_audio_notification(config, success):
                          stdout=subprocess.DEVNULL, 
                          stderr=subprocess.DEVNULL)
         elif system == 'linux':
-            # Try different audio players
-            players = ['aplay', 'paplay', 'play']
-            for player in players:
-                try:
-                    subprocess.run([player, sound_path], 
-                                 check=True,
-                                 stdout=subprocess.DEVNULL, 
-                                 stderr=subprocess.DEVNULL)
-                    break
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    continue
-        else:  # Windows
-            ps_script = f'$sound = New-Object Media.SoundPlayer "{sound_path}"; $sound.PlaySync()'
-            subprocess.run(['powershell', '-Command', ps_script], 
-                         check=False,
-                         stdout=subprocess.DEVNULL, 
-                         stderr=subprocess.DEVNULL)
+            # TODO: Add Linux system sound support
+            pass
+        elif system == 'windows':
+            # TODO: Add Windows system sound support
+            pass
+        else:
+            return False
         return True
     except Exception as e:
         return False
@@ -1761,20 +1327,16 @@ func createTaskNotificationConfig() error {
 		return nil
 	}
 
-	// Create default config
+	// Create default config - desktop + audio with system sound
 	config := &types.NotificationConfig{
-		NotificationTypes: []string{"desktop"},
+		NotificationTypes: []string{"desktop", "audio"},
 		CooldownSecs:      2,
 		Desktop: types.DesktopConfig{
 			Enabled:     true,
-			ShowDetails: true,
+			ShowDetails: false,
 		},
 		Audio: types.AudioConfig{
-			Enabled:      false,
-			SuccessSound: "success.wav",
-			ErrorSound:   "error.wav",
-			DefaultSound: "complete.wav",
-			Volume:       70,
+			Enabled: true,
 		},
 	}
 
