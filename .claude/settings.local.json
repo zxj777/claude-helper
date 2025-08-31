@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(/Users/zhuxiaojiang/Library/**)",
+      "Read(/Users/zhuxiaojiang/Library/Caches/claude-cli-nodejs/**)",
+      "Read(/Users/zhuxiaojiang/Library/Caches/claude-cli-nodejs/-Users-zhuxiaojiang-toys-claude-helper/**)",
+      "Read(/Users/zhuxiaojiang/Library/Caches/claude-cli-nodejs/-Users-zhuxiaojiang-toys-claude-helper/**)",
+      "Read(/Users/zhuxiaojiang/Library/**)",
+      "WebSearch",
+      "Read(/Users/zhuxiaojiang/.claude/**)",
+      "Read(/Users/zhuxiaojiang/.claude/projects/**)",
+      "Read(/Users/zhuxiaojiang/.claude/projects/-Users-zhuxiaojiang-toys-claude-helper/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
